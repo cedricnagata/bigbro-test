@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		8B28BE312F97F6A6001DD2B5 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B28BE302F97F6A6001DD2B5 /* BigBroKit */; };
-		8BBE42AC2F96CAA500F9DB8F /* BigBroKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */; };
-		8BBE42AD2F96CAA500F9DB8F /* BigBroKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,25 +27,11 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		8BBE42AE2F96CAA500F9DB8F /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				8BBE42AD2F96CAA500F9DB8F /* BigBroKit.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "bigbro-test.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8BBE41EB2F96C0C200F9DB8F /* bigbro-testTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "bigbro-testTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8BBE41F52F96C0C200F9DB8F /* bigbro-testUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "bigbro-testUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = BigBroKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -87,7 +71,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				8B28BE312F97F6A6001DD2B5 /* BigBroKit in Frameworks */,
-				8BBE42AC2F96CAA500F9DB8F /* BigBroKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,7 +97,6 @@
 				8BBE41E02F96C0C100F9DB8F /* bigbro-test */,
 				8BBE41EE2F96C0C200F9DB8F /* bigbro-testTests */,
 				8BBE41F82F96C0C200F9DB8F /* bigbro-testUITests */,
-				8BBE42AA2F96CAA500F9DB8F /* Frameworks */,
 				8BBE41DF2F96C0C100F9DB8F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -129,14 +111,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		8BBE42AA2F96CAA500F9DB8F /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -147,7 +121,6 @@
 				8BBE41DA2F96C0C100F9DB8F /* Sources */,
 				8BBE41DB2F96C0C100F9DB8F /* Frameworks */,
 				8BBE41DC2F96C0C100F9DB8F /* Resources */,
-				8BBE42AE2F96CAA500F9DB8F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
