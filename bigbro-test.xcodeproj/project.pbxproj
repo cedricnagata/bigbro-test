@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8B28BE312F97F6A6001DD2B5 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B28BE302F97F6A6001DD2B5 /* BigBroKit */; };
 		8BBE42AC2F96CAA500F9DB8F /* BigBroKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */; };
 		8BBE42AD2F96CAA500F9DB8F /* BigBroKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -85,6 +86,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B28BE312F97F6A6001DD2B5 /* BigBroKit in Frameworks */,
 				8BBE42AC2F96CAA500F9DB8F /* BigBroKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -156,6 +158,7 @@
 			);
 			name = "bigbro-test";
 			packageProductDependencies = (
+				8B28BE302F97F6A6001DD2B5 /* BigBroKit */,
 			);
 			productName = "bigbro-test";
 			productReference = 8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */;
@@ -239,6 +242,9 @@
 			);
 			mainGroup = 8BBE41D52F96C0C100F9DB8F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8B28BE2F2F97F6A6001DD2B5 /* XCRemoteSwiftPackageReference "bigbro-kit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8BBE41DF2F96C0C100F9DB8F /* Products */;
 			projectDirPath = "";
@@ -628,6 +634,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8B28BE2F2F97F6A6001DD2B5 /* XCRemoteSwiftPackageReference "bigbro-kit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/cedricnagata/bigbro-kit";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8B28BE302F97F6A6001DD2B5 /* BigBroKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B28BE2F2F97F6A6001DD2B5 /* XCRemoteSwiftPackageReference "bigbro-kit" */;
+			productName = BigBroKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8BBE41D62F96C0C100F9DB8F /* Project object */;
 }
