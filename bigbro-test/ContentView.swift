@@ -212,26 +212,44 @@ final class ChatViewModel: ObservableObject {
         guard !text.isEmpty else { return }
         input = ""
 
-        let userMsg = ChatMessage(role: "user", text: text)
-        messages.append(userMsg)
+        messages.append(ChatMessage(role: "user", text: text))
         history.append(.user(text))
         isLoading = true
 
+        let placeholder = ChatMessage(role: "assistant", text: "")
+        messages.append(placeholder)
+        let idx = messages.count - 1
+
+        var accumulated = ""
         do {
-            let reply = try await client.chat(history)
-            history.append(.assistant(reply))
-            messages.append(ChatMessage(role: "assistant", text: reply))
+            for try await delta in client.chatStream(history) {
+                accumulated += delta
+                messages[idx].text = accumulated
+            }
+            history.append(.assistant(accumulated))
         } catch {
-            messages.append(ChatMessage(role: "assistant", text: "Error: \(error.localizedDescription)"))
+            messages[idx].text = "Error: \(error.localizedDescription)"
         }
         isLoading = false
     }
 }
 
 struct ChatMessage: Identifiable {
-    let id = UUID()
+    let id: UUID
     let role: String
-    let text: String
+    var text: String
+
+    init(role: String, text: String) {
+        self.id = UUID()
+        self.role = role
+        self.text = text
+    }
+
+    init(id: UUID, role: String, text: String) {
+        self.id = id
+        self.role = role
+        self.text = text
+    }
 }
 
 #Preview {
