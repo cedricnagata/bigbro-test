@@ -43,19 +43,19 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		8BBE41DE2F96C0C100F9DB8F /* BigBroTest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BigBroTest.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8BBE41EB2F96C0C200F9DB8F /* BigBroTestTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BigBroTestTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		8BBE41F52F96C0C200F9DB8F /* BigBroTestUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BigBroTestUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "bigbro-test.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BBE41EB2F96C0C200F9DB8F /* bigbro-testTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "bigbro-testTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BBE41F52F96C0C200F9DB8F /* bigbro-testUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "bigbro-testUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8BBE42AB2F96CAA500F9DB8F /* BigBroKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = BigBroKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		8BBE42092F96C1EF00F9DB8F /* Exceptions for "bigbro-test" folder in "BigBroTest" target */ = {
+		8BBE42092F96C1EF00F9DB8F /* Exceptions for "bigbro-test" folder in "bigbro-test" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 8BBE41DD2F96C0C100F9DB8F /* BigBroTest */;
+			target = 8BBE41DD2F96C0C100F9DB8F /* bigbro-test */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -63,7 +63,7 @@
 		8BBE41E02F96C0C100F9DB8F /* bigbro-test */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				8BBE42092F96C1EF00F9DB8F /* Exceptions for "bigbro-test" folder in "BigBroTest" target */,
+				8BBE42092F96C1EF00F9DB8F /* Exceptions for "bigbro-test" folder in "bigbro-test" target */,
 			);
 			path = "bigbro-test";
 			sourceTree = "<group>";
@@ -120,9 +120,9 @@
 		8BBE41DF2F96C0C100F9DB8F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8BBE41DE2F96C0C100F9DB8F /* BigBroTest.app */,
-				8BBE41EB2F96C0C200F9DB8F /* BigBroTestTests.xctest */,
-				8BBE41F52F96C0C200F9DB8F /* BigBroTestUITests.xctest */,
+				8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */,
+				8BBE41EB2F96C0C200F9DB8F /* bigbro-testTests.xctest */,
+				8BBE41F52F96C0C200F9DB8F /* bigbro-testUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -138,9 +138,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		8BBE41DD2F96C0C100F9DB8F /* BigBroTest */ = {
+		8BBE41DD2F96C0C100F9DB8F /* bigbro-test */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8BBE41FF2F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTest" */;
+			buildConfigurationList = 8BBE41FF2F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-test" */;
 			buildPhases = (
 				8BBE41DA2F96C0C100F9DB8F /* Sources */,
 				8BBE41DB2F96C0C100F9DB8F /* Frameworks */,
@@ -154,16 +154,16 @@
 			fileSystemSynchronizedGroups = (
 				8BBE41E02F96C0C100F9DB8F /* bigbro-test */,
 			);
-			name = BigBroTest;
+			name = "bigbro-test";
 			packageProductDependencies = (
 			);
 			productName = "bigbro-test";
-			productReference = 8BBE41DE2F96C0C100F9DB8F /* BigBroTest.app */;
+			productReference = 8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */;
 			productType = "com.apple.product-type.application";
 		};
-		8BBE41EA2F96C0C200F9DB8F /* BigBroTestTests */ = {
+		8BBE41EA2F96C0C200F9DB8F /* bigbro-testTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8BBE42022F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTestTests" */;
+			buildConfigurationList = 8BBE42022F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-testTests" */;
 			buildPhases = (
 				8BBE41E72F96C0C200F9DB8F /* Sources */,
 				8BBE41E82F96C0C200F9DB8F /* Frameworks */,
@@ -177,16 +177,16 @@
 			fileSystemSynchronizedGroups = (
 				8BBE41EE2F96C0C200F9DB8F /* bigbro-testTests */,
 			);
-			name = BigBroTestTests;
+			name = "bigbro-testTests";
 			packageProductDependencies = (
 			);
 			productName = "bigbro-testTests";
-			productReference = 8BBE41EB2F96C0C200F9DB8F /* BigBroTestTests.xctest */;
+			productReference = 8BBE41EB2F96C0C200F9DB8F /* bigbro-testTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		8BBE41F42F96C0C200F9DB8F /* BigBroTestUITests */ = {
+		8BBE41F42F96C0C200F9DB8F /* bigbro-testUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8BBE42052F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTestUITests" */;
+			buildConfigurationList = 8BBE42052F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-testUITests" */;
 			buildPhases = (
 				8BBE41F12F96C0C200F9DB8F /* Sources */,
 				8BBE41F22F96C0C200F9DB8F /* Frameworks */,
@@ -200,11 +200,11 @@
 			fileSystemSynchronizedGroups = (
 				8BBE41F82F96C0C200F9DB8F /* bigbro-testUITests */,
 			);
-			name = BigBroTestUITests;
+			name = "bigbro-testUITests";
 			packageProductDependencies = (
 			);
 			productName = "bigbro-testUITests";
-			productReference = 8BBE41F52F96C0C200F9DB8F /* BigBroTestUITests.xctest */;
+			productReference = 8BBE41F52F96C0C200F9DB8F /* bigbro-testUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -230,7 +230,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 8BBE41D92F96C0C100F9DB8F /* Build configuration list for PBXProject "BigBroTest" */;
+			buildConfigurationList = 8BBE41D92F96C0C100F9DB8F /* Build configuration list for PBXProject "bigbro-test" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -244,9 +244,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8BBE41DD2F96C0C100F9DB8F /* BigBroTest */,
-				8BBE41EA2F96C0C200F9DB8F /* BigBroTestTests */,
-				8BBE41F42F96C0C200F9DB8F /* BigBroTestUITests */,
+				8BBE41DD2F96C0C100F9DB8F /* bigbro-test */,
+				8BBE41EA2F96C0C200F9DB8F /* bigbro-testTests */,
+				8BBE41F42F96C0C200F9DB8F /* bigbro-testUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -302,12 +302,12 @@
 /* Begin PBXTargetDependency section */
 		8BBE41ED2F96C0C200F9DB8F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8BBE41DD2F96C0C100F9DB8F /* BigBroTest */;
+			target = 8BBE41DD2F96C0C100F9DB8F /* bigbro-test */;
 			targetProxy = 8BBE41EC2F96C0C200F9DB8F /* PBXContainerItemProxy */;
 		};
 		8BBE41F72F96C0C200F9DB8F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8BBE41DD2F96C0C100F9DB8F /* BigBroTest */;
+			target = 8BBE41DD2F96C0C100F9DB8F /* bigbro-test */;
 			targetProxy = 8BBE41F62F96C0C200F9DB8F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -522,7 +522,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BigBroTest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BigBroTest";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/bigbro-test.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/bigbro-test";
 			};
 			name = Debug;
 		};
@@ -544,7 +544,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BigBroTest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BigBroTest";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/bigbro-test.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/bigbro-test";
 			};
 			name = Release;
 		};
@@ -591,7 +591,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8BBE41D92F96C0C100F9DB8F /* Build configuration list for PBXProject "BigBroTest" */ = {
+		8BBE41D92F96C0C100F9DB8F /* Build configuration list for PBXProject "bigbro-test" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8BBE41FD2F96C0C200F9DB8F /* Debug */,
@@ -600,7 +600,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8BBE41FF2F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTest" */ = {
+		8BBE41FF2F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-test" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8BBE42002F96C0C200F9DB8F /* Debug */,
@@ -609,7 +609,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8BBE42022F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTestTests" */ = {
+		8BBE42022F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-testTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8BBE42032F96C0C200F9DB8F /* Debug */,
@@ -618,7 +618,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8BBE42052F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "BigBroTestUITests" */ = {
+		8BBE42052F96C0C200F9DB8F /* Build configuration list for PBXNativeTarget "bigbro-testUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8BBE42062F96C0C200F9DB8F /* Debug */,
