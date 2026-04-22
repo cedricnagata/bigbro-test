@@ -33,11 +33,3 @@ The app's `Info.plist` must include (already configured):
     <string>_bigbro._tcp</string>
 </array>
 ```
-
-## Flow
-
-```
-Discovering… → (auto-selects if one Mac found, or shows picker) → Waiting for approval… → Chat
-```
-
-If pairing is denied or times out, an error screen is shown with a retry button.
