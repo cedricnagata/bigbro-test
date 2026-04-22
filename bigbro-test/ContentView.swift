@@ -95,6 +95,39 @@ private struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Connection status card
+            BigBroConnectionView(client: viewModel.client) {
+                await viewModel.reconnect()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            // Streaming toggle
+            HStack {
+                Toggle(isOn: $viewModel.streamingEnabled) {
+                    Label(
+                        viewModel.streamingEnabled ? "Streaming" : "Single response",
+                        systemImage: viewModel.streamingEnabled ? "waveform" : "text.bubble"
+                    )
+                    .font(.subheadline)
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+
+                Spacer()
+
+                if !viewModel.messages.isEmpty {
+                    Button("Clear") { viewModel.clearChat() }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            // Messages
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -106,12 +139,11 @@ private struct ChatView: View {
                                 ProgressView().scaleEffect(0.8).padding(10)
                                 Spacer()
                             }
-                            .id("loading")
                         }
+                        Color.clear.frame(height: 1).id("bottom")
                     }
                     .padding(.horizontal)
                     .padding(.top, 8)
-                    .id("bottom")
                 }
                 .onChange(of: viewModel.messages.count) { _, _ in
                     withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -152,12 +184,20 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: 60) }
-            Text(message.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(isUser ? Color.blue : Color(.systemGray5))
-                .foregroundStyle(isUser ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 2) {
+                Text(message.text.isEmpty ? "…" : message.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(isUser ? Color.blue : Color(.systemGray5))
+                    .foregroundStyle(isUser ? .white : .primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                if !message.model.isEmpty {
+                    Text(message.model)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 4)
+                }
+            }
             if !isUser { Spacer(minLength: 60) }
         }
     }
@@ -179,13 +219,19 @@ final class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var input: String = ""
     @Published var isLoading = false
+    @Published var streamingEnabled = true
 
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
 
-    private let client = BigBroClient()
+    let client = BigBroClient()
     private var history: [Message] = []
 
     func start() async {
+        // Already connected from a previous session
+        if client.isConnected {
+            state = .chat
+            return
+        }
         state = .discovering
         let devices = await client.discover()
         if devices.isEmpty {
@@ -207,6 +253,17 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    func reconnect() async {
+        history = []
+        messages = []
+        await start()
+    }
+
+    func clearChat() {
+        messages = []
+        history = []
+    }
+
     func send() async {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -216,13 +273,13 @@ final class ChatViewModel: ObservableObject {
         history.append(.user(text))
         isLoading = true
 
-        let placeholder = ChatMessage(role: "assistant", text: "")
+        let placeholder = ChatMessage(role: "assistant", text: "", model: client.connectedDevice?.name ?? "")
         messages.append(placeholder)
         let idx = messages.count - 1
 
         var accumulated = ""
         do {
-            for try await delta in client.chatStream(history) {
+            for try await delta in client.send(history, streaming: streamingEnabled) {
                 accumulated += delta
                 messages[idx].text = accumulated
             }
@@ -234,21 +291,18 @@ final class ChatViewModel: ObservableObject {
     }
 }
 
+// MARK: - Models
+
 struct ChatMessage: Identifiable {
-    let id: UUID
+    let id = UUID()
     let role: String
     var text: String
+    var model: String
 
-    init(role: String, text: String) {
-        self.id = UUID()
+    init(role: String, text: String, model: String = "") {
         self.role = role
         self.text = text
-    }
-
-    init(id: UUID, role: String, text: String) {
-        self.id = id
-        self.role = role
-        self.text = text
+        self.model = model
     }
 }
 
