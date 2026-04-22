@@ -6,132 +6,172 @@ struct ContentView: View {
     @StateObject private var viewModel = ChatViewModel()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch viewModel.state {
-                case .discovering:
-                    DiscoveringView()
-                case .selectDevice(let devices):
-                    DevicePickerView(devices: devices, onSelect: viewModel.pair)
-                case .pairing:
-                    PairingView()
-                case .chat:
-                    ChatView(viewModel: viewModel)
-                case .error(let message):
-                    ErrorView(message: message, onRetry: viewModel.start)
-                }
-            }
-            .navigationTitle("BigBro")
-            .navigationBarTitleDisplayMode(.inline)
+        HStack(spacing: 0) {
+            SettingsPanel(viewModel: viewModel)
+                .frame(width: 280)
+                .background(Color(.secondarySystemBackground))
+            Divider()
+            ChatPanel(viewModel: viewModel, client: viewModel.client)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.start() }
     }
 }
 
-// MARK: - State screens
+// MARK: - Settings panel
 
-private struct DiscoveringView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Looking for BigBro…")
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct DevicePickerView: View {
-    let devices: [BigBroDevice]
-    let onSelect: (BigBroDevice) async -> Void
-
-    var body: some View {
-        List(devices) { device in
-            Button {
-                Task { await onSelect(device) }
-            } label: {
-                Label(device.name, systemImage: "desktopcomputer")
-            }
-        }
-        .navigationTitle("Choose a Mac")
-    }
-}
-
-private struct PairingView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Waiting for approval on the Mac…")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-        }
-    }
-}
-
-private struct ErrorView: View {
-    let message: String
-    let onRetry: () async -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 44))
-                .foregroundStyle(.orange)
-            Text(message)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-            Button("Try Again") { Task { await onRetry() } }
-                .buttonStyle(.borderedProminent)
-        }
-    }
-}
-
-// MARK: - Chat screen
-
-private struct ChatView: View {
+private struct SettingsPanel: View {
     @ObservedObject var viewModel: ChatViewModel
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Connection status card
-            BigBroConnectionView(client: viewModel.client) {
-                await viewModel.reconnect()
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
+        VStack(alignment: .leading, spacing: 16) {
+            Text("BigBro")
+                .font(.title2.bold())
+                .padding(.top, 4)
 
-            // Streaming toggle
-            HStack {
-                Toggle(isOn: $viewModel.streamingEnabled) {
-                    Label(
-                        viewModel.streamingEnabled ? "Streaming" : "Single response",
-                        systemImage: viewModel.streamingEnabled ? "waveform" : "text.bubble"
-                    )
-                    .font(.subheadline)
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-
-                Spacer()
-
-                Button("Refresh") { viewModel.client.refresh() }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if !viewModel.messages.isEmpty {
-                    Button("Clear") { viewModel.clearChat() }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
+            ConnectionSection(viewModel: viewModel, client: viewModel.client)
 
             Divider()
 
-            // Messages
+            Toggle(isOn: $viewModel.streamingEnabled) {
+                Label(
+                    viewModel.streamingEnabled ? "Streaming" : "Single response",
+                    systemImage: viewModel.streamingEnabled ? "waveform" : "text.bubble"
+                )
+                .font(.subheadline)
+            }
+            .toggleStyle(.switch)
+
+            Button {
+                viewModel.clearChat()
+            } label: {
+                Label("Clear chat", systemImage: "trash")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+            .disabled(viewModel.messages.isEmpty)
+
+            Spacer()
+        }
+        .padding(16)
+    }
+}
+
+private struct ConnectionSection: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @ObservedObject var client: BigBroClient
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Connection")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            switch viewModel.state {
+            case .idle:
+                Button {
+                    Task { await viewModel.findBigBro() }
+                } label: {
+                    Label("Find BigBro", systemImage: "magnifyingglass")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderedProminent)
+            case .discovering:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for BigBro…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            case .selectDevice(let devices):
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Available Macs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(devices) { device in
+                        DevicePickerRow(device: device) {
+                            Task { await viewModel.pair(with: device) }
+                        }
+                    }
+                    Button("Cancel") {
+                        Task { await viewModel.start() }
+                    }
+                    .font(.caption)
+                    .padding(.top, 4)
+                }
+            case .pairing:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for approval…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            case .chat:
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(client.isConnected ? Color.green : Color.secondary.opacity(0.4))
+                        .frame(width: 10, height: 10)
+                    Text(client.connectedDevice?.name ?? "Paired")
+                        .font(.subheadline)
+                        .lineLimit(1)
+                }
+                Text(client.isConnected ? "Connected" : "Disconnected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button(role: .destructive) {
+                    viewModel.disconnect()
+                } label: {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            case .error(let message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                Button("Find BigBro") {
+                    Task { await viewModel.findBigBro() }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+}
+
+private struct DevicePickerRow: View {
+    let device: BigBroDevice
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(device.name).font(.subheadline)
+                    Text(device.host).font(.caption2).foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "desktopcomputer")
+            }
+        }
+        .buttonStyle(.bordered)
+    }
+}
+
+// MARK: - Chat panel
+
+private struct ChatPanel: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @ObservedObject var client: BigBroClient
+    @FocusState private var inputFocused: Bool
+
+    private var canType: Bool {
+        if case .chat = viewModel.state { return client.isConnected }
+        return false
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -160,10 +200,11 @@ private struct ChatView: View {
             Divider()
 
             HStack(spacing: 10) {
-                TextField("Message", text: $viewModel.input, axis: .vertical)
+                TextField(canType ? "Message" : "Not connected", text: $viewModel.input, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
                     .focused($inputFocused)
+                    .disabled(!canType)
                     .onSubmit { Task { await viewModel.send() } }
 
                 Button {
@@ -173,7 +214,7 @@ private struct ChatView: View {
                         .font(.system(size: 30))
                         .foregroundStyle(viewModel.canSend ? .blue : .secondary)
                 }
-                .disabled(!viewModel.canSend)
+                .disabled(!viewModel.canSend || !canType)
             }
             .padding(12)
         }
@@ -212,6 +253,7 @@ private struct MessageBubble: View {
 @MainActor
 final class ChatViewModel: ObservableObject {
     enum State {
+        case idle
         case discovering
         case selectDevice([BigBroDevice])
         case pairing
@@ -219,7 +261,7 @@ final class ChatViewModel: ObservableObject {
         case error(String)
     }
 
-    @Published var state: State = .discovering
+    @Published var state: State = .idle
     @Published var messages: [ChatMessage] = []
     @Published var input: String = ""
     @Published var isLoading = false
@@ -229,21 +271,37 @@ final class ChatViewModel: ObservableObject {
 
     let client = BigBroClient()
     private var history: [Message] = []
+    private var cancellables: Set<AnyCancellable> = []
+
+    init() {
+        // If the presence stream drops for any reason (Mac disconnect/remove/
+        // network drop/15s heartbeat timeout), the client tears itself down
+        // and flips isConnected to false — return the UI to idle.
+        client.$isConnected
+            .receive(on: DispatchQueue.main)
+            .dropFirst()
+            .sink { [weak self] connected in
+                guard let self else { return }
+                if !connected, case .chat = self.state {
+                    self.history = []
+                    self.messages = []
+                    self.state = .idle
+                }
+            }
+            .store(in: &cancellables)
+    }
 
     func start() async {
-        // Already connected from a previous session
-        if client.isConnected {
-            state = .chat
-            return
-        }
+        state = .idle
+    }
+
+    func findBigBro() async {
         state = .discovering
-        let devices = await client.discover()
-        if devices.isEmpty {
+        let found = await client.discover()
+        if found.isEmpty {
             state = .error("No BigBro Macs found on this network.")
-        } else if devices.count == 1 {
-            await pair(with: devices[0])
         } else {
-            state = .selectDevice(devices)
+            state = .selectDevice(found)
         }
     }
 
@@ -257,10 +315,11 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func reconnect() async {
+    func disconnect() {
+        client.disconnect()
         history = []
         messages = []
-        await start()
+        state = .idle
     }
 
     func clearChat() {
