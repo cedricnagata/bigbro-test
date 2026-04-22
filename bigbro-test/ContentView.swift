@@ -116,6 +116,10 @@ private struct ChatView: View {
 
                 Spacer()
 
+                Button("Refresh") { viewModel.client.refresh() }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
                 if !viewModel.messages.isEmpty {
                     Button("Clear") { viewModel.clearChat() }
                         .font(.subheadline)
