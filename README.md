@@ -68,10 +68,7 @@ Each tool can be toggled individually in the left panel. The SDK's agentic loop 
 | Tool | Description |
 |---|---|
 | `get_current_date` | Returns the current date and time from the device clock |
-| `web_search` | Searches the web via DuckDuckGo's Instant Answer API and returns a summary |
 | `calculator` | Evaluates a basic math expression (e.g. `137 * 42`) using `NSExpression` |
-
-**Note on `web_search`:** The DuckDuckGo Instant Answer API (`api.duckduckgo.com`) returns summaries for well-known topics but may return empty results for obscure queries. This is a free, no-auth API suitable for demos.
 
 **Note on `calculator`:** Input is whitelist-validated (digits, `+`, `-`, `*`, `/`, `.`, `(`, `)`) before evaluation to prevent crashes from malformed expressions.
 

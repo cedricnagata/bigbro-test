@@ -372,38 +372,6 @@ final class ChatViewModel: ObservableObject {
         }
     )
 
-    private static let webSearchTool = BigBroTool(
-        definition: BigBroTool.Definition(
-            name: "web_search",
-            description: "Search the web using DuckDuckGo and return a brief summary of results.",
-            parameters: BigBroTool.Definition.Parameters(
-                properties: [
-                    "query": .init(type: "string", description: "The search query")
-                ],
-                required: ["query"]
-            )
-        ),
-        handler: { args in
-            guard let query = args["query"] as? String,
-                  !query.isEmpty,
-                  let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                  let url = URL(string: "https://api.duckduckgo.com/?q=\(encoded)&format=json&no_html=1")
-            else { return "Invalid search query." }
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    return "Could not parse search results."
-                }
-                let answer   = (json["Answer"] as? String ?? "").trimmingCharacters(in: .whitespaces)
-                let abstract = (json["Abstract"] as? String ?? "").trimmingCharacters(in: .whitespaces)
-                let parts = [answer, abstract].filter { !$0.isEmpty }
-                return parts.isEmpty ? "No summary available for this query." : parts.joined(separator: "\n")
-            } catch {
-                return "Search failed: \(error.localizedDescription)"
-            }
-        }
-    )
-
     private static let calculatorTool = BigBroTool(
         definition: BigBroTool.Definition(
             name: "calculator",
@@ -431,7 +399,6 @@ final class ChatViewModel: ObservableObject {
 
     let allTools: [BigBroTool] = [
         ChatViewModel.getCurrentDateTool,
-        ChatViewModel.webSearchTool,
         ChatViewModel.calculatorTool,
     ]
 
