@@ -114,14 +114,19 @@ private struct ConnectionSection: View {
                 }
             case .chat:
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(client.isConnected ? Color.green : Color.secondary.opacity(0.4))
-                        .frame(width: 10, height: 10)
+                    switch client.connectionState {
+                    case .connected:
+                        Circle().fill(Color.green).frame(width: 10, height: 10)
+                    case .reconnecting:
+                        ProgressView().controlSize(.mini)
+                    case .disconnected:
+                        Circle().fill(Color.secondary.opacity(0.4)).frame(width: 10, height: 10)
+                    }
                     Text(client.connectedDevice?.name ?? "Paired")
                         .font(.subheadline)
                         .lineLimit(1)
                 }
-                Text(client.isConnected ? "Connected" : "Disconnected")
+                Text(client.connectionState == .reconnecting ? "Reconnecting…" : "Connected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -299,15 +304,14 @@ final class ChatViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
-        // If the presence stream drops for any reason (Mac disconnect/remove/
-        // network drop/15s heartbeat timeout), the client tears itself down
-        // and flips isConnected to false — return the UI to idle.
-        client.$isConnected
+        // .disconnected → return UI to idle (bye received, heartbeat timeout, hard failure).
+        // .reconnecting → stay in .chat; ConnectionSection shows spinner until resolved.
+        client.$connectionState
             .receive(on: DispatchQueue.main)
             .dropFirst()
-            .sink { [weak self] connected in
+            .sink { [weak self] state in
                 guard let self else { return }
-                if !connected, case .chat = self.state {
+                if state == .disconnected, case .chat = self.state {
                     self.history = []
                     self.messages = []
                     self.state = .idle
