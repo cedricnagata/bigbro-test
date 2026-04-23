@@ -33,3 +33,22 @@ The app's `Info.plist` must include (already configured):
     <string>_bigbro._tcp</string>
 </array>
 ```
+
+## Layout
+
+Two-panel split view:
+
+- **Left panel** — connection status (inline loading, device picker, green/grey dot), streaming toggle, tools toggle, clear chat button
+- **Right panel** — message history (always visible) and input bar (disabled until connected)
+
+## Flow
+
+```
+Idle (Find BigBro button) → Discovering… → Pick a Mac → Waiting for approval… → Chat
+```
+
+The Mac remembers approved devices and auto-approves reconnects — the pairing dialog only appears on first connect. If disconnected by the Mac or by a missed heartbeat, the app returns to idle; tap Find BigBro to reconnect.
+
+## Tools
+
+Enable the **Tools** toggle to include a `get_current_date` tool with each request. When the model calls it, BigBroKit executes the handler locally and returns the result transparently — the chat UI just sees the final text stream.

@@ -42,6 +42,12 @@ private struct SettingsPanel: View {
             }
             .toggleStyle(.switch)
 
+            Toggle(isOn: $viewModel.toolsEnabled) {
+                Label("Tools (get_current_date)", systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline)
+            }
+            .toggleStyle(.switch)
+
             Button {
                 viewModel.clearChat()
             } label: {
@@ -266,8 +272,27 @@ final class ChatViewModel: ObservableObject {
     @Published var input: String = ""
     @Published var isLoading = false
     @Published var streamingEnabled = true
+    @Published var toolsEnabled = false
 
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
+
+    private static let getCurrentDateTool = BigBroTool(
+        definition: BigBroTool.Definition(
+            name: "get_current_date",
+            description: "Returns the current date and time on the user's device.",
+            parameters: BigBroTool.Definition.Parameters()
+        ),
+        handler: { _ in
+            let f = DateFormatter()
+            f.dateStyle = .full
+            f.timeStyle = .medium
+            return f.string(from: Date())
+        }
+    )
+
+    var activatedTools: [BigBroTool] {
+        toolsEnabled ? [Self.getCurrentDateTool] : []
+    }
 
     let client = BigBroClient()
     private var history: [Message] = []
@@ -342,7 +367,7 @@ final class ChatViewModel: ObservableObject {
 
         var accumulated = ""
         do {
-            for try await delta in client.send(history, streaming: streamingEnabled) {
+            for try await delta in client.send(history, streaming: streamingEnabled, tools: activatedTools) {
                 accumulated += delta
                 messages[idx].text = accumulated
             }
