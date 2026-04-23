@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import PhotosUI
 import BigBroKit
 
 struct ContentView: View {
@@ -42,11 +43,28 @@ private struct SettingsPanel: View {
             }
             .toggleStyle(.switch)
 
-            Toggle(isOn: $viewModel.toolsEnabled) {
-                Label("Tools (get_current_date)", systemImage: "wrench.and.screwdriver")
-                    .font(.subheadline)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Tools")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+
+                ForEach(viewModel.allTools, id: \.definition.function.name) { tool in
+                    Toggle(isOn: Binding(
+                        get: { viewModel.enabledTools.contains(tool.definition.function.name) },
+                        set: { enabled in
+                            if enabled {
+                                viewModel.enabledTools.insert(tool.definition.function.name)
+                            } else {
+                                viewModel.enabledTools.remove(tool.definition.function.name)
+                            }
+                        }
+                    )) {
+                        Label(tool.definition.function.name, systemImage: "wrench.and.screwdriver")
+                            .font(.subheadline)
+                    }
+                    .toggleStyle(.switch)
+                }
             }
-            .toggleStyle(.switch)
 
             Button {
                 viewModel.clearChat()
@@ -208,9 +226,51 @@ private struct ChatPanel: View {
                 }
             }
 
+            // Pending image previews
+            if !viewModel.selectedImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.selectedImages.indices, id: \.self) { i in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: viewModel.selectedImages[i])
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                Button {
+                                    viewModel.selectedImages.remove(at: i)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.white, .black)
+                                        .font(.system(size: 16))
+                                }
+                                .offset(x: 6, y: -6)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .background(Color(.systemGray6))
+            }
+
             Divider()
 
             HStack(spacing: 10) {
+                PhotosPicker(
+                    selection: $viewModel.imagePickerItems,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundStyle(canType ? .blue : .secondary)
+                }
+                .disabled(!canType)
+                .onChange(of: viewModel.imagePickerItems) { _, newItems in
+                    viewModel.loadImages(from: newItems)
+                }
+
                 TextField(canType ? "Message" : "Not connected", text: $viewModel.input, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
@@ -240,7 +300,20 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: 60) }
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
+                if !message.images.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(message.images.indices, id: \.self) { i in
+                                Image(uiImage: message.images[i])
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 120, height: 90)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                }
                 Text(message.text.isEmpty ? "…" : message.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -277,9 +350,13 @@ final class ChatViewModel: ObservableObject {
     @Published var input: String = ""
     @Published var isLoading = false
     @Published var streamingEnabled = true
-    @Published var toolsEnabled = false
+    @Published var enabledTools: Set<String> = []
+    @Published var selectedImages: [UIImage] = []
+    @Published var imagePickerItems: [PhotosPickerItem] = []
 
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
+
+    // MARK: - Tool definitions
 
     private static let getCurrentDateTool = BigBroTool(
         definition: BigBroTool.Definition(
@@ -295,8 +372,71 @@ final class ChatViewModel: ObservableObject {
         }
     )
 
+    private static let webSearchTool = BigBroTool(
+        definition: BigBroTool.Definition(
+            name: "web_search",
+            description: "Search the web using DuckDuckGo and return a brief summary of results.",
+            parameters: BigBroTool.Definition.Parameters(
+                properties: [
+                    "query": .init(type: "string", description: "The search query")
+                ],
+                required: ["query"]
+            )
+        ),
+        handler: { args in
+            guard let query = args["query"] as? String,
+                  !query.isEmpty,
+                  let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let url = URL(string: "https://api.duckduckgo.com/?q=\(encoded)&format=json&no_html=1")
+            else { return "Invalid search query." }
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return "Could not parse search results."
+                }
+                let answer   = (json["Answer"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                let abstract = (json["Abstract"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                let parts = [answer, abstract].filter { !$0.isEmpty }
+                return parts.isEmpty ? "No summary available for this query." : parts.joined(separator: "\n")
+            } catch {
+                return "Search failed: \(error.localizedDescription)"
+            }
+        }
+    )
+
+    private static let calculatorTool = BigBroTool(
+        definition: BigBroTool.Definition(
+            name: "calculator",
+            description: "Evaluates a basic mathematical expression (e.g. '2 + 2 * 3') and returns the result.",
+            parameters: BigBroTool.Definition.Parameters(
+                properties: [
+                    "expression": .init(type: "string", description: "A math expression using +, -, *, /, (, )")
+                ],
+                required: ["expression"]
+            )
+        ),
+        handler: { args in
+            guard let expression = args["expression"] as? String else { return "Invalid expression." }
+            let allowed = CharacterSet(charactersIn: "0123456789+-*/.() ")
+            guard expression.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+                return "Expression contains invalid characters. Use only: 0-9 + - * / . ( ) and spaces."
+            }
+            let nsExpr = NSExpression(format: expression)
+            if let result = nsExpr.expressionValue(with: nil, context: nil) {
+                return "\(result)"
+            }
+            return "Could not evaluate expression."
+        }
+    )
+
+    let allTools: [BigBroTool] = [
+        ChatViewModel.getCurrentDateTool,
+        ChatViewModel.webSearchTool,
+        ChatViewModel.calculatorTool,
+    ]
+
     var activatedTools: [BigBroTool] {
-        toolsEnabled ? [Self.getCurrentDateTool] : []
+        allTools.filter { enabledTools.contains($0.definition.function.name) }
     }
 
     let client = BigBroClient()
@@ -304,8 +444,6 @@ final class ChatViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
-        // .disconnected → return UI to idle (bye received, heartbeat timeout, hard failure).
-        // .reconnecting → stay in .chat; ConnectionSection shows spinner until resolved.
         client.$connectionState
             .receive(on: DispatchQueue.main)
             .dropFirst()
@@ -361,8 +499,14 @@ final class ChatViewModel: ObservableObject {
         guard !text.isEmpty else { return }
         input = ""
 
-        messages.append(ChatMessage(role: "user", text: text))
-        history.append(.user(text))
+        let imageData = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
+        let imagesToDisplay = selectedImages
+        selectedImages = []
+        imagePickerItems = []
+
+        messages.append(ChatMessage(role: "user", text: text, images: imagesToDisplay))
+        let userMessage = Message.user(text, images: imageData)
+        history.append(userMessage)
         isLoading = true
 
         let placeholder = ChatMessage(role: "assistant", text: "", model: client.connectedDevice?.name ?? "")
@@ -381,6 +525,23 @@ final class ChatViewModel: ObservableObject {
         }
         isLoading = false
     }
+
+    // MARK: - Image loading
+
+    func loadImages(from items: [PhotosPickerItem]) {
+        Task {
+            var loaded: [UIImage] = []
+            for item in items {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    loaded.append(image)
+                }
+            }
+            await MainActor.run {
+                self.selectedImages = loaded
+            }
+        }
+    }
 }
 
 // MARK: - Models
@@ -390,11 +551,13 @@ struct ChatMessage: Identifiable {
     let role: String
     var text: String
     var model: String
+    var images: [UIImage]
 
-    init(role: String, text: String, model: String = "") {
+    init(role: String, text: String, model: String = "", images: [UIImage] = []) {
         self.role = role
         self.text = text
         self.model = model
+        self.images = images
     }
 }
 
