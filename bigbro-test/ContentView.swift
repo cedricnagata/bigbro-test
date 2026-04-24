@@ -13,7 +13,7 @@ private let requiredModels: [String] = [
 ]
 
 struct ContentView: View {
-    @StateObject private var viewModel = ChatViewModel()
+    @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
         HStack(spacing: 0) {
@@ -557,5 +557,5 @@ struct ChatMessage: Identifiable {
 }
 
 #Preview {
-    ContentView()
+    ContentView(viewModel: ChatViewModel())
 }

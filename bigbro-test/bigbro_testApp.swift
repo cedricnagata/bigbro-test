@@ -1,17 +1,16 @@
-//
-//  bigbro_testApp.swift
-//  bigbro-test
-//
-//  Created by Cedric Nagata on 4/20/26.
-//
-
 import SwiftUI
+import UIKit
 
 @main
 struct bigbro_testApp: App {
+    @StateObject private var viewModel = ChatViewModel()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(viewModel: viewModel)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in
+                    viewModel.disconnect()
+                }
         }
     }
 }
