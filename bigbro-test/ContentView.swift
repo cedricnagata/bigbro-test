@@ -8,7 +8,7 @@ import BigBroKit
 /// Models this app requires on the BigBro Mac. The Mac will prompt to download
 /// any that aren't already in Ollama when this device connects.
 private let requiredModels: [String] = [
-    "gpt-oss-20b",
+    "gpt-oss:20b",
     "gemma4:31b",
 ]
 
