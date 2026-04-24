@@ -3,6 +3,15 @@ import Combine
 import PhotosUI
 import BigBroKit
 
+// MARK: - Configuration
+
+/// Models this app requires on the BigBro Mac. The Mac will prompt to download
+/// any that aren't already in Ollama when this device connects.
+private let requiredModels: [String] = [
+    "gpt-oss-20b",
+    "gemma4:31b",
+]
+
 struct ContentView: View {
     @StateObject private var viewModel = ChatViewModel()
 
@@ -31,6 +40,24 @@ private struct SettingsPanel: View {
                 .padding(.top, 4)
 
             ConnectionSection(viewModel: viewModel, client: viewModel.client)
+
+            Divider()
+
+            if !requiredModels.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Model")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    Picker("Model", selection: $viewModel.selectedModel) {
+                        Text("Default").tag(Optional<String>.none)
+                        ForEach(requiredModels, id: \.self) { model in
+                            Text(model).tag(Optional(model))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+            }
 
             Divider()
 
@@ -406,7 +433,8 @@ final class ChatViewModel: ObservableObject {
         allTools.filter { enabledTools.contains($0.definition.function.name) }
     }
 
-    let client = BigBroClient()
+    @Published var selectedModel: String? = requiredModels.first
+    let client = BigBroClient(requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
 
@@ -482,7 +510,7 @@ final class ChatViewModel: ObservableObject {
 
         var accumulated = ""
         do {
-            for try await delta in client.chat(history, streaming: streamingEnabled, tools: activatedTools) {
+            for try await delta in client.chat(history, model: selectedModel, streaming: streamingEnabled, tools: activatedTools) {
                 accumulated += delta
                 messages[idx].text = accumulated
             }
