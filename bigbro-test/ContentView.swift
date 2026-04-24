@@ -49,7 +49,7 @@ private struct SettingsPanel: View {
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                     Picker("Model", selection: $viewModel.selectedModel) {
-                        Text("Default").tag(Optional<String>.none)
+                        Text("BigBro Default").tag(Optional<String>.none)
                         ForEach(requiredModels, id: \.self) { model in
                             Text(model).tag(Optional(model))
                         }
