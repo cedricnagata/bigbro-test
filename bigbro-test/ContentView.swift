@@ -482,7 +482,7 @@ final class ChatViewModel: ObservableObject {
 
         var accumulated = ""
         do {
-            for try await delta in client.send(history, streaming: streamingEnabled, tools: activatedTools) {
+            for try await delta in client.chat(history, streaming: streamingEnabled, tools: activatedTools) {
                 accumulated += delta
                 messages[idx].text = accumulated
             }
