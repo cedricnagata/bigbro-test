@@ -9,7 +9,7 @@ import BigBroKit
 /// any that aren't already in Ollama when this device connects.
 private let requiredModels: [String] = [
     "gpt-oss:20b",
-    "gemma4:31b",
+    "gemma4:e2b",
 ]
 
 struct ContentView: View {
@@ -174,6 +174,25 @@ private struct ConnectionSection: View {
                 Text(client.connectionState == .reconnecting ? "Reconnecting…" : "Connected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if !client.missingModels.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Missing models", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                        ForEach(client.missingModels, id: \.self) { model in
+                            Text(model)
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        Text("Download in Ollama to use these models.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(8)
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
 
                 Button(role: .destructive) {
                     viewModel.disconnect()
@@ -434,7 +453,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     @Published var selectedModel: String? = requiredModels.first
-    let client = BigBroClient(requiredModels: requiredModels)
+    let client = BigBroClient(appName: "BigBro Test", requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
 
