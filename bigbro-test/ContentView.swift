@@ -417,32 +417,25 @@ final class ChatViewModel: ObservableObject {
         }
     )
 
-    private static let batteryLevelTool = BigBroTool(
+    private static let deviceInfoTool = BigBroTool(
         definition: BigBroTool.Definition(
-            name: "get_battery_level",
-            description: "Returns the current battery level of the user's device as a percentage and the charging state.",
+            name: "get_device_info",
+            description: "Returns information about the user's device: name, model, system name, and OS version.",
             parameters: BigBroTool.Definition.Parameters()
         ),
         handler: { _ in
-            UIDevice.current.isBatteryMonitoringEnabled = true
-            let level = UIDevice.current.batteryLevel
-            let state = UIDevice.current.batteryState
-            guard level >= 0 else { return "Battery level is unavailable." }
-            let percent = Int((level * 100).rounded())
-            let stateText: String
-            switch state {
-            case .charging: stateText = "charging"
-            case .full:     stateText = "full"
-            case .unplugged: stateText = "on battery"
-            default:        stateText = "unknown"
-            }
-            return "\(percent)% (\(stateText))"
+            let device = UIDevice.current
+            return """
+            Name: \(device.name)
+            Model: \(device.model)
+            System: \(device.systemName) \(device.systemVersion)
+            """
         }
     )
 
     let allTools: [BigBroTool] = [
         ChatViewModel.getCurrentDateTool,
-        ChatViewModel.batteryLevelTool,
+        ChatViewModel.deviceInfoTool,
     ]
 
     var activatedTools: [BigBroTool] {
