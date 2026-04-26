@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		8B92F5CC2F9EBF3600300447 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B92F5CB2F9EBF3600300447 /* BigBroKit */; };
+		8B92F5CF2F9EC7A300300447 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B92F5CE2F9EC7A300300447 /* BigBroKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,16 +66,6 @@
 			path = "bigbro-test";
 			sourceTree = "<group>";
 		};
-		8BBE41EE2F96C0C200F9DB8F /* bigbro-testTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "bigbro-testTests";
-			sourceTree = "<group>";
-		};
-		8BBE41F82F96C0C200F9DB8F /* bigbro-testUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "bigbro-testUITests";
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +73,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B92F5CF2F9EC7A300300447 /* BigBroKit in Frameworks */,
 				8B92F5CC2F9EBF3600300447 /* BigBroKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -107,8 +99,6 @@
 			isa = PBXGroup;
 			children = (
 				8BBE41E02F96C0C100F9DB8F /* bigbro-test */,
-				8BBE41EE2F96C0C200F9DB8F /* bigbro-testTests */,
-				8BBE41F82F96C0C200F9DB8F /* bigbro-testUITests */,
 				8BBE41DF2F96C0C100F9DB8F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -145,6 +135,7 @@
 			name = "bigbro-test";
 			packageProductDependencies = (
 				8B92F5CB2F9EBF3600300447 /* BigBroKit */,
+				8B92F5CE2F9EC7A300300447 /* BigBroKit */,
 			);
 			productName = "bigbro-test";
 			productReference = 8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */;
@@ -162,9 +153,6 @@
 			);
 			dependencies = (
 				8BBE41ED2F96C0C200F9DB8F /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				8BBE41EE2F96C0C200F9DB8F /* bigbro-testTests */,
 			);
 			name = "bigbro-testTests";
 			packageProductDependencies = (
@@ -185,9 +173,6 @@
 			);
 			dependencies = (
 				8BBE41F72F96C0C200F9DB8F /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				8BBE41F82F96C0C200F9DB8F /* bigbro-testUITests */,
 			);
 			name = "bigbro-testUITests";
 			packageProductDependencies = (
@@ -229,7 +214,7 @@
 			mainGroup = 8BBE41D52F96C0C100F9DB8F;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				8B92F5CA2F9EBF3600300447 /* XCLocalSwiftPackageReference "../bigbro-kit" */,
+				8B92F5CD2F9EC7A300300447 /* XCRemoteSwiftPackageReference "bigbro-kit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8BBE41DF2F96C0C100F9DB8F /* Products */;
@@ -621,16 +606,25 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		8B92F5CA2F9EBF3600300447 /* XCLocalSwiftPackageReference "../bigbro-kit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../bigbro-kit";
+/* Begin XCRemoteSwiftPackageReference section */
+		8B92F5CD2F9EC7A300300447 /* XCRemoteSwiftPackageReference "bigbro-kit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/cedricnagata/bigbro-kit";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
 		};
-/* End XCLocalSwiftPackageReference section */
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		8B92F5CB2F9EBF3600300447 /* BigBroKit */ = {
 			isa = XCSwiftPackageProductDependency;
+			productName = BigBroKit;
+		};
+		8B92F5CE2F9EC7A300300447 /* BigBroKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B92F5CD2F9EC7A300300447 /* XCRemoteSwiftPackageReference "bigbro-kit" */;
 			productName = BigBroKit;
 		};
 /* End XCSwiftPackageProductDependency section */
