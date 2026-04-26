@@ -15,15 +15,50 @@ private let requiredModels: [String] = [
 
 struct ContentView: View {
     @ObservedObject var viewModel: ChatViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var showingSettings = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            SettingsPanel(viewModel: viewModel)
-                .frame(width: 280)
-                .background(Color(.secondarySystemBackground))
-            Divider()
-            ChatPanel(viewModel: viewModel, client: viewModel.client)
-                .frame(maxWidth: .infinity)
+        Group {
+            if horizontalSizeClass == .regular {
+                // iPad: side-by-side
+                HStack(spacing: 0) {
+                    SettingsPanel(viewModel: viewModel)
+                        .frame(width: 280)
+                        .background(Color(.secondarySystemBackground))
+                    Divider()
+                    ChatPanel(viewModel: viewModel, client: viewModel.client)
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                // iPhone: chat full-screen, settings in a sheet
+                NavigationStack {
+                    ChatPanel(viewModel: viewModel, client: viewModel.client)
+                        .navigationTitle("BigBro")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    showingSettings = true
+                                } label: {
+                                    Image(systemName: "sidebar.left")
+                                }
+                            }
+                        }
+                }
+                .sheet(isPresented: $showingSettings) {
+                    NavigationStack {
+                        SettingsPanel(viewModel: viewModel)
+                            .navigationTitle("Settings")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showingSettings = false }
+                                }
+                            }
+                    }
+                }
+            }
         }
         .task { await viewModel.start() }
     }
@@ -36,10 +71,6 @@ private struct SettingsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("BigBro")
-                .font(.title2.bold())
-                .padding(.top, 4)
-
             ConnectionSection(viewModel: viewModel, client: viewModel.client)
 
             Divider()
