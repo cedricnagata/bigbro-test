@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		8B5239E92F99933600E49E55 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B5239E82F99933600E49E55 /* BigBroKit */; };
+		8B92F5CC2F9EBF3600300447 /* BigBroKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B92F5CB2F9EBF3600300447 /* BigBroKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,7 +82,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8B5239E92F99933600E49E55 /* BigBroKit in Frameworks */,
+				8B92F5CC2F9EBF3600300447 /* BigBroKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,7 +144,7 @@
 			);
 			name = "bigbro-test";
 			packageProductDependencies = (
-				8B5239E82F99933600E49E55 /* BigBroKit */,
+				8B92F5CB2F9EBF3600300447 /* BigBroKit */,
 			);
 			productName = "bigbro-test";
 			productReference = 8BBE41DE2F96C0C100F9DB8F /* bigbro-test.app */;
@@ -229,7 +229,7 @@
 			mainGroup = 8BBE41D52F96C0C100F9DB8F;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				8B5239E72F99933600E49E55 /* XCLocalSwiftPackageReference "../bigbro-kit" */,
+				8B92F5CA2F9EBF3600300447 /* XCLocalSwiftPackageReference "../bigbro-kit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8BBE41DF2F96C0C100F9DB8F /* Products */;
@@ -622,14 +622,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		8B5239E72F99933600E49E55 /* XCLocalSwiftPackageReference "../bigbro-kit" */ = {
+		8B92F5CA2F9EBF3600300447 /* XCLocalSwiftPackageReference "../bigbro-kit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../bigbro-kit";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		8B5239E82F99933600E49E55 /* BigBroKit */ = {
+		8B92F5CB2F9EBF3600300447 /* BigBroKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BigBroKit;
 		};

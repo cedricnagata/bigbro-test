@@ -10,6 +10,7 @@ import BigBroKit
 private let requiredModels: [String] = [
     "gpt-oss:20b",
     "gemma4:e2b",
+    "qwen3-vl:30b"
 ]
 
 struct ContentView: View {
@@ -348,15 +349,13 @@ private struct MessageBubble: View {
             if isUser { Spacer(minLength: 60) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                 if !message.images.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(message.images.indices, id: \.self) { i in
-                                Image(uiImage: message.images[i])
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 120, height: 90)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
+                    HStack(spacing: 6) {
+                        ForEach(message.images.indices, id: \.self) { i in
+                            Image(uiImage: message.images[i])
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 120, height: 90)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -418,34 +417,32 @@ final class ChatViewModel: ObservableObject {
         }
     )
 
-    private static let calculatorTool = BigBroTool(
+    private static let batteryLevelTool = BigBroTool(
         definition: BigBroTool.Definition(
-            name: "calculator",
-            description: "Evaluates a basic mathematical expression (e.g. '2 + 2 * 3') and returns the result.",
-            parameters: BigBroTool.Definition.Parameters(
-                properties: [
-                    "expression": .init(type: "string", description: "A math expression using +, -, *, /, (, )")
-                ],
-                required: ["expression"]
-            )
+            name: "get_battery_level",
+            description: "Returns the current battery level of the user's device as a percentage and the charging state.",
+            parameters: BigBroTool.Definition.Parameters()
         ),
-        handler: { args in
-            guard let expression = args["expression"] as? String else { return "Invalid expression." }
-            let allowed = CharacterSet(charactersIn: "0123456789+-*/.() ")
-            guard expression.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-                return "Expression contains invalid characters. Use only: 0-9 + - * / . ( ) and spaces."
+        handler: { _ in
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            let level = UIDevice.current.batteryLevel
+            let state = UIDevice.current.batteryState
+            guard level >= 0 else { return "Battery level is unavailable." }
+            let percent = Int((level * 100).rounded())
+            let stateText: String
+            switch state {
+            case .charging: stateText = "charging"
+            case .full:     stateText = "full"
+            case .unplugged: stateText = "on battery"
+            default:        stateText = "unknown"
             }
-            let nsExpr = NSExpression(format: expression)
-            if let result = nsExpr.expressionValue(with: nil, context: nil) {
-                return "\(result)"
-            }
-            return "Could not evaluate expression."
+            return "\(percent)% (\(stateText))"
         }
     )
 
     let allTools: [BigBroTool] = [
         ChatViewModel.getCurrentDateTool,
-        ChatViewModel.calculatorTool,
+        ChatViewModel.batteryLevelTool,
     ]
 
     var activatedTools: [BigBroTool] {
