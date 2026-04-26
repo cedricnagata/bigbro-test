@@ -424,11 +424,11 @@ final class ChatViewModel: ObservableObject {
             parameters: BigBroTool.Definition.Parameters()
         ),
         handler: { _ in
-            let device = UIDevice.current
+            let device = await UIDevice.current
             return """
-            Name: \(device.name)
-            Model: \(device.model)
-            System: \(device.systemName) \(device.systemVersion)
+            Name: \(await device.name)
+            Model: \(await device.model)
+            System: \(await device.systemName) \(await device.systemVersion)
             """
         }
     )
