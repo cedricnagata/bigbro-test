@@ -75,6 +75,10 @@ private struct SettingsPanel: View {
 
             Divider()
 
+            ReconnectionSection(viewModel: viewModel, client: viewModel.client)
+
+            Divider()
+
             if !requiredModels.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Model")
@@ -137,6 +141,41 @@ private struct SettingsPanel: View {
             Spacer()
         }
         .padding(16)
+    }
+}
+
+private struct ReconnectionSection: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @ObservedObject var client: BigBroClient
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Reconnection")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            Toggle(isOn: Binding(
+                get: { client.autoReconnectEnabled },
+                set: { viewModel.setAutoReconnect($0) }
+            )) {
+                Label("Auto-reconnect", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.subheadline)
+            }
+            .toggleStyle(.switch)
+
+            Text("Remembered Macs: \(client.pairedDeviceNames.count)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button(role: .destructive) {
+                viewModel.forgetPairedMacs()
+            } label: {
+                Label("Forget paired Macs", systemImage: "trash")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .disabled(client.pairedDeviceNames.isEmpty)
+        }
     }
 }
 
@@ -485,12 +524,24 @@ final class ChatViewModel: ObservableObject {
             .sink { [weak self] state in
                 guard let self else { return }
                 if state == .disconnected, case .chat = self.state {
-                    self.history = []
-                    self.messages = []
-                    self.state = .idle
+                    // With auto-reconnect on, stay in .chat and let the SDK
+                    // restore the connection silently; otherwise reset.
+                    if !self.client.autoReconnectEnabled {
+                        self.history = []
+                        self.messages = []
+                        self.state = .idle
+                    }
+                }
+                // After auto-reconnect succeeds while we were idle (e.g. fresh
+                // launch), promote to .chat.
+                if state == .connected, case .idle = self.state {
+                    self.state = .chat
                 }
             }
             .store(in: &cancellables)
+
+        // Restore auto-reconnect on launch if previously enabled.
+        client.resumeAutoReconnectIfEnabled()
     }
 
     func start() async {
@@ -527,6 +578,19 @@ final class ChatViewModel: ObservableObject {
     func clearChat() {
         messages = []
         history = []
+    }
+
+    func setAutoReconnect(_ enabled: Bool) {
+        if enabled {
+            client.enableAutoReconnect()
+        } else {
+            client.disableAutoReconnect()
+        }
+    }
+
+    func forgetPairedMacs() {
+        client.disableAutoReconnect()
+        client.forgetAllDevices()
     }
 
     func send() async {
