@@ -343,6 +343,17 @@ private struct ChatPanel: View {
                 }
             }
 
+            if !client.modelDownloads.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(client.modelDownloads.values), id: \.model) { dl in
+                        ModelDownloadBanner(progress: dl)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.blue.opacity(0.08))
+            }
+
             // Pending image previews
             if !viewModel.selectedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -406,6 +417,50 @@ private struct ChatPanel: View {
             }
             .padding(12)
         }
+    }
+}
+
+private struct ModelDownloadBanner: View {
+    let progress: ModelDownloadProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: progress.error != nil ? "exclamationmark.circle.fill" : "arrow.down.circle.fill")
+                    .foregroundStyle(progress.error != nil ? .red : .blue)
+                Text(progress.model)
+                    .font(.caption.bold())
+                Spacer()
+                if progress.bytesTotal > 0 {
+                    Text("\(Int((progress.percent * 100).rounded()))%")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let err = progress.error {
+                Text(err).font(.caption2).foregroundStyle(.red)
+            } else {
+                ProgressView(value: progress.percent)
+                    .progressViewStyle(.linear)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var label: String {
+        if progress.bytesTotal > 0 {
+            return "\(progress.status) — \(format(progress.bytesCompleted))/\(format(progress.bytesTotal))"
+        }
+        return progress.status
+    }
+
+    private func format(_ bytes: Int64) -> String {
+        let f = ByteCountFormatter()
+        f.allowedUnits = [.useMB, .useGB]
+        f.countStyle = .file
+        return f.string(fromByteCount: bytes)
     }
 }
 
