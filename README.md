@@ -26,23 +26,27 @@ private let requiredModels: [String] = [
 
 4. Select a physical device or simulator as the run destination and build
 
-The app's `Info.plist` must include (already configured):
+Privacy configuration is already in place, split across two locations because the target uses
+`GENERATE_INFOPLIST_FILE = YES`:
+
+`Info.plist` holds the Bonjour service list:
 ```xml
-<key>NSLocalNetworkUsageDescription</key>
-<string>Used to discover and connect to BigBro on your local network.</string>
 <key>NSBonjourServices</key>
 <array>
     <string>_bigbro._tcp</string>
 </array>
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Used to attach images to your messages.</string>
 ```
+
+The usage descriptions are build settings (`INFOPLIST_KEY_*`), merged in at build time:
+
+- `NSLocalNetworkUsageDescription` — Bonjour discovery and the TCP connection
+- `NSMicrophoneUsageDescription` — recording for the speech-to-text demo
 
 ## Layout
 
 Two-panel split view:
 
-- **Left panel (280pt)** — connection status, missing model warnings, model picker, streaming toggle, per-tool toggles, clear chat
+- **Left panel (280pt)** — connection status, missing model warnings, model picker, streaming toggle, per-tool toggles, speech demos, clear chat
 - **Right panel** — scrollable message history, pending image previews, input bar
 
 ## Connection flow
@@ -92,3 +96,20 @@ bigbro-test/bigbro-test/
 ├── ContentView.swift     — all UI, ChatViewModel, tool definitions, image loading
 └── bigbro_testApp.swift  — app entry point
 ```
+
+## Speech demos
+
+**Speech demos** in the left panel opens a sheet exercising the three speech APIs. All require a
+speech backend enabled on the Mac (Settings → Speech); the button is disabled until a Mac is
+connected.
+
+- **Text to speech** — `client.speak(text)` streamed through `BigBroAudioPlayer`, so audio
+  starts on the first chunk rather than after the whole utterance.
+- **Speech to text** — records a full utterance with `AVAudioRecorder`, then sends it to
+  `client.transcribe(audio, format: "m4a")`. Batch, not streaming.
+- **Voice loop** — `client.converse(...)`, which runs a chat turn and speaks it sentence by
+  sentence. Text and audio arrive interleaved on one stream, so the demo forwards audio chunks
+  into a second stream that playback drains concurrently.
+
+A quick round trip that needs no microphone: speak a phrase, then record the playback and
+confirm the transcript matches.
