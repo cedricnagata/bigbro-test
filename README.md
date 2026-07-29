@@ -93,7 +93,8 @@ Each tool can be toggled individually in the left panel. The SDK's agentic loop 
 
 ```
 bigbro-test/bigbro-test/
-├── ContentView.swift     — all UI, ChatViewModel, tool definitions, image loading
+├── ContentView.swift     — chat UI, ChatViewModel, tool definitions, image loading
+├── SpeechPanel.swift     — speech demos (speak, transcribe, converse)
 └── bigbro_testApp.swift  — app entry point
 ```
 
