@@ -68,6 +68,7 @@ struct ContentView: View {
 
 private struct SettingsPanel: View {
     @ObservedObject var viewModel: ChatViewModel
+    @State private var showingSpeech = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -129,6 +130,10 @@ private struct SettingsPanel: View {
                 }
             }
 
+            Divider()
+
+            SpeechSection(client: viewModel.client, showingSpeech: $showingSpeech)
+
             Button {
                 viewModel.clearChat()
             } label: {
@@ -141,6 +146,42 @@ private struct SettingsPanel: View {
             Spacer()
         }
         .padding(16)
+        .sheet(isPresented: $showingSpeech) {
+            NavigationStack {
+                SpeechDemoView(client: viewModel.client)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingSpeech = false }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+private struct SpeechSection: View {
+    // Observed directly: SettingsPanel only watches the view model, so without this the
+    // button would never re-enable when the client connects.
+    @ObservedObject var client: BigBroClient
+    @Binding var showingSpeech: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Speech")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            // Presented as a sheet rather than inline: the demos need more room than the
+            // 280pt sidebar gives them.
+            Button {
+                showingSpeech = true
+            } label: {
+                Label("Speech demos", systemImage: "waveform.circle")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!client.isConnected)
+        }
     }
 }
 
