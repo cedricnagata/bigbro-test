@@ -113,6 +113,14 @@ private struct SettingsPanel: View {
             }
             .toggleStyle(.switch)
 
+            Text("Shows the model's reasoning as it streams. It reasons either way — this only decides whether you see it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            ReasoningEffortSection(viewModel: viewModel)
+
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
@@ -154,6 +162,52 @@ private struct SettingsPanel: View {
             Spacer()
         }
         .padding(16)
+    }
+}
+
+/// How hard the model thinks before answering — as opposed to the Thinking toggle above,
+/// which only decides whether the reasoning is shown.
+///
+/// There is no "off" option because gpt-oss has none: the Harmony prompt format carries an
+/// effort level and nothing else, and the model was trained on exactly these three values.
+/// "Low" is as close to off as the model gets.
+private struct ReasoningEffortSection: View {
+    @ObservedObject var viewModel: ChatViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Reasoning effort")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            Picker("Reasoning effort", selection: $viewModel.reasoningEffort) {
+                Text("Model default").tag(Optional<ReasoningEffort>.none)
+                ForEach(ReasoningEffort.allCases, id: \.self) { effort in
+                    Text(effort.rawValue.capitalized).tag(Optional(effort))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var detail: String {
+        switch viewModel.reasoningEffort {
+        // Not simply "medium": with no effort named, the Mac falls back to reading the
+        // Thinking toggle, and treats it being off as a request for speed. Saying "the model
+        // default" here would be wrong half the time.
+        case .none:
+            return viewModel.thinkingEnabled
+                ? "Left to the Mac — medium, the gpt-oss default."
+                : "Left to the Mac — low, because Thinking is off."
+        case .low?:    return "Shortest analysis pass — fastest answer, weakest on multi-step problems."
+        case .medium?: return "Balanced. The gpt-oss default."
+        case .high?:   return "Longest analysis pass — best on hard problems, slowest to first token."
+        }
     }
 }
 
@@ -280,6 +334,15 @@ private struct ConnectionSection: View {
                 Text(client.connectionState == .reconnecting ? "Reconnecting…" : "Connected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if viewModel.isPreloading {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Warming up the model…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 if !client.missingModels.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -615,6 +678,10 @@ final class ChatViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var streamingEnabled = true
     @Published var thinkingEnabled = false
+    /// `nil` leaves the model's own default in place rather than asserting a level.
+    @Published var reasoningEffort: ReasoningEffort?
+    /// True while the Mac is materializing the model's weights ahead of the first message.
+    @Published private(set) var isPreloading = false
     @Published var enabledTools: Set<String> = []
     @Published var selectedImages: [UIImage] = []
     @Published var imagePickerItems: [PhotosPickerItem] = []
@@ -677,6 +744,8 @@ final class ChatViewModel: ObservableObject {
     let client = BigBroClient(appName: "BigBro Test", requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
+    private var preloadTask: Task<Void, Never>?
+    private var preloadGeneration = 0
 
     init() {
         client.$connectionState
@@ -697,6 +766,15 @@ final class ChatViewModel: ObservableObject {
                 // launch), promote to .chat.
                 if state == .connected, case .idle = self.state {
                     self.state = .chat
+                }
+                // Warm the model as soon as there's a Mac to warm it on, however the
+                // connection arrived — auto-reconnect lands here without going through
+                // pair(), so preloading only from pair() would miss the common case.
+                if state == .connected {
+                    self.preloadModel()
+                }
+                if state == .disconnected {
+                    self.cancelPreload()
                 }
             }
             .store(in: &cancellables)
@@ -724,12 +802,55 @@ final class ChatViewModel: ObservableObject {
         do {
             let approved = try await client.pair(with: device)
             state = approved ? .chat : .error("Pairing was denied on the Mac.")
+            if approved { preloadModel() }
         } catch {
             state = .error(error.localizedDescription)
         }
     }
 
+    /// Asks the Mac to load the chat model into memory now, rather than letting that cost
+    /// land on the user's first message — for a 20B model that is several seconds of
+    /// materializing weights, and it is the difference between a chat screen that answers
+    /// immediately and one that appears to hang on the first send.
+    ///
+    /// Fire-and-forget by design. Every failure mode here is one the next `chat()` handles
+    /// on its own: a model still downloading, a Mac too old to know the `preload` message, a
+    /// connection that drops in between. None of them is worth an error in the UI for an
+    /// optimization the user never asked for, so they are logged and dropped.
+    func preloadModel() {
+        guard preloadTask == nil else { return }   // already warming; a second ask is redundant
+        isPreloading = true
+        // A cancelled preload can still be sitting in `await` when the next connection starts
+        // one — cancelling an unstructured Task does not force it to return. Stamping each
+        // attempt means the stale one's cleanup can't clear the live one's state on its way out.
+        preloadGeneration &+= 1
+        let generation = preloadGeneration
+        preloadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.client.preloadModel()
+                print("[bigbro-test] preload complete")
+            } catch is CancellationError {
+                // Disconnected while warming — nothing to report.
+            } catch {
+                print("[bigbro-test] preload skipped: \(error.localizedDescription)")
+            }
+            guard self.preloadGeneration == generation else { return }
+            self.isPreloading = false
+            self.preloadTask = nil
+        }
+    }
+
+    /// Abandons any in-flight preload without waiting for it to notice.
+    private func cancelPreload() {
+        preloadGeneration &+= 1
+        preloadTask?.cancel()
+        preloadTask = nil
+        isPreloading = false
+    }
+
     func disconnect() {
+        cancelPreload()
         client.disconnect()
         speechPlayer.stop()
         history = []
@@ -783,6 +904,7 @@ final class ChatViewModel: ObservableObject {
                 streaming: streamingEnabled,
                 tools: activatedTools,
                 think: thinkingEnabled,
+                reasoningEffort: reasoningEffort,
                 onThinking: { [weak self] delta in
                     Task { @MainActor in self?.messages[idx].thinking += delta }
                 }
