@@ -6,13 +6,40 @@ import BigBroKit
 
 // MARK: - Configuration
 
-/// Models this app requires on the BigBro Mac. The Mac checks these when this device
-/// connects and offers to download any that are missing.
+/// A text model this app can ask the Mac to run, and what it can do.
 ///
-/// Text only, and only gpt-oss-20b — it is the one text model BigBro runs, so there is
-/// nothing to choose between. Transcription and speech synthesis are Parakeet and Kokoro on
-/// the Mac; they are not listed here because they are not selectable, they load with the
-/// speech backend.
+/// Capabilities are mirrored from BigBro's own catalog rather than discovered, so the UI can
+/// grey out a control the moment a model is picked instead of after a round trip. The Mac is
+/// still the authority — it drops what a model can't do and reports it back via
+/// `client.modelNotes`, which is what catches this table drifting out of date.
+struct TestModel: Identifiable, Hashable {
+    let id: String
+    let displayName: String
+    let supportsTools: Bool
+    /// Whether the model produces a reasoning trace at all.
+    let supportsReasoning: Bool
+    /// Whether low/medium/high means anything. Only gpt-oss has a real effort dial.
+    let supportsReasoningEffort: Bool
+}
+
+private let availableModels: [TestModel] = [
+    TestModel(id: "gpt-oss-20b",  displayName: "gpt-oss 20B",  supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: true),
+    TestModel(id: "qwen3-8b",     displayName: "Qwen3 8B",     supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: false),
+    TestModel(id: "qwen3-4b",     displayName: "Qwen3 4B",     supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: false),
+    TestModel(id: "llama-3.1-8b", displayName: "Llama 3.1 8B", supportsTools: true,  supportsReasoning: false, supportsReasoningEffort: false),
+    TestModel(id: "llama-3.2-3b", displayName: "Llama 3.2 3B", supportsTools: true,  supportsReasoning: false, supportsReasoningEffort: false),
+    TestModel(id: "gemma-4-e2b",  displayName: "Gemma 4 E2B",  supportsTools: false, supportsReasoning: false, supportsReasoningEffort: false),
+    TestModel(id: "gemma-3-1b",   displayName: "Gemma 3 1B",   supportsTools: false, supportsReasoning: false, supportsReasoningEffort: false),
+]
+
+/// Models the Mac should have ready before this device is useful — just the default.
+///
+/// Deliberately not every entry in `availableModels`: declaring them all would have the Mac
+/// offer to pull tens of gigabytes on first connect. The others download on demand the first
+/// time one is actually selected, through the same `modelDownloading` flow.
+///
+/// Transcription and speech synthesis are Parakeet and Kokoro on the Mac; they aren't listed
+/// because they aren't selectable, they load with the speech backend.
 private let requiredModels: [String] = [
     "gpt-oss-20b"
 ]
@@ -83,12 +110,21 @@ private struct SettingsPanel: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Model")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
-                Label("gpt-oss-20b", systemImage: "cpu")
-                    .font(.subheadline)
+                Picker("Model", selection: $viewModel.selectedModelID) {
+                    ForEach(availableModels) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+
+                Text(viewModel.modelCapabilitySummary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()
@@ -107,14 +143,18 @@ private struct SettingsPanel: View {
                     .font(.subheadline)
             }
             .toggleStyle(.switch)
+            .disabled(!viewModel.selectedModel.supportsReasoning)
 
-            Text("Shows the model's reasoning as it streams. It reasons either way — this only decides whether you see it.")
+            Text(viewModel.selectedModel.supportsReasoning
+                 ? "Shows the model's reasoning as it streams. It reasons either way — this only decides whether you see it."
+                 : "\(viewModel.selectedModel.displayName) has no reasoning phase — there's no trace to show.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            Divider()
-
-            ReasoningEffortSection(viewModel: viewModel)
+            if viewModel.selectedModel.supportsReasoningEffort {
+                Divider()
+                ReasoningEffortSection(viewModel: viewModel)
+            }
 
             Divider()
 
@@ -138,6 +178,13 @@ private struct SettingsPanel: View {
                             .font(.subheadline)
                     }
                     .toggleStyle(.switch)
+                    .disabled(!viewModel.selectedModel.supportsTools)
+                }
+
+                if !viewModel.selectedModel.supportsTools {
+                    Text("\(viewModel.selectedModel.displayName) can't call tools. The Mac drops them rather than failing, so requests still answer — just without them.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -481,6 +528,22 @@ private struct ChatPanel: View {
                     .padding(.vertical, 6)
                 }
                 .background(Color(.systemGray6))
+            }
+
+            // The Mac's own account of what the model couldn't do. Usually agrees with the
+            // greyed-out controls; when it doesn't, this local capability table is stale.
+            if !client.modelNotes.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(client.modelNotes, id: \.self) { note in
+                        Label(note, systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.08))
             }
 
             if viewModel.voiceActive {
@@ -856,6 +919,27 @@ final class ChatViewModel: ObservableObject {
         allTools.filter { enabledTools.contains($0.definition.function.name) }
     }
 
+    @Published var selectedModelID: String = availableModels[0].id
+
+    var selectedModel: TestModel {
+        availableModels.first { $0.id == selectedModelID } ?? availableModels[0]
+    }
+
+    /// One line describing what the picked model can do, so the difference between models is
+    /// visible before a request rather than inferred from a reply that quietly ignored half
+    /// the settings.
+    var modelCapabilitySummary: String {
+        let model = selectedModel
+        var parts: [String] = []
+        parts.append(model.supportsTools ? "Tools" : "No tools")
+        switch (model.supportsReasoning, model.supportsReasoningEffort) {
+        case (false, _): parts.append("no reasoning")
+        case (true, true): parts.append("reasoning with low/med/high")
+        case (true, false): parts.append("reasoning on/off")
+        }
+        return parts.joined(separator: " · ")
+    }
+
     let client = BigBroClient(appName: "BigBro Test", requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
@@ -1019,6 +1103,7 @@ final class ChatViewModel: ObservableObject {
         do {
             let stream = client.chat(
                 history,
+                model: selectedModelID,
                 streaming: streamingEnabled,
                 tools: activatedTools,
                 think: thinkingEnabled,
@@ -1059,9 +1144,14 @@ final class ChatViewModel: ObservableObject {
         voiceError = nil
         speechPlayer.stop()   // the session has its own player; don't let two share the route
 
+        // Sent as configured rather than pre-filtered against `selectedModel`. The Mac is the
+        // authority on what a model can do and reports what it dropped, so sending and being
+        // told exercises that path — and is what catches this app's capability table drifting
+        // from BigBro's catalog. The settings UI already prevents enabling them knowingly.
         let session = BigBroVoiceSession(
             client: client,
             tools: activatedTools,
+            model: selectedModelID,
             reasoningEffort: reasoningEffort
         )
         // Carry the typed conversation across, so switching to voice continues it rather
