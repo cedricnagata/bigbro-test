@@ -39,7 +39,8 @@ private let availableModels: [TestModel] = [
 /// time one is actually selected, through the same `modelDownloading` flow.
 ///
 /// Transcription and speech synthesis are Parakeet and Kokoro on the Mac; they aren't listed
-/// because they aren't selectable, they load with the speech backend.
+/// here because they aren't selectable by name — the Mac manages them in its own Settings
+/// (download / run / stop / remove), and this app only ever asks for "speech" as a whole.
 private let requiredModels: [String] = [
     "gpt-oss-20b"
 ]
@@ -268,7 +269,18 @@ private struct SpeechSection: View {
             }
             .toggleStyle(.switch)
 
-            Text("Uses the Mac's text-to-speech backend. Voice input (mic button) works the same way — both need Speech enabled in BigBro's settings on the Mac.")
+            // Voice is a BigBroKit-side parameter, not a Mac setting — there's nothing to pick
+            // on the Mac to keep in sync with. Empty uses `BigBroClient.defaultVoice`.
+            LabeledContent("Voice") {
+                TextField(BigBroClient.defaultVoice, text: $viewModel.voice)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+            }
+            Text("Kokoro speaker id, e.g. `af_heart`, `am_adam`, `bf_emma`. Applies to typed and hands-free replies alike.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text("Uses the Mac's on-device text-to-speech and transcription — both start automatically on first use, the same way a language model does.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -856,6 +868,9 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Voice
 
     @Published var speakResponses = false
+    /// Kokoro voice id passed to `speak`/`converse`. Empty uses `BigBroClient.defaultVoice` —
+    /// voice selection is a BigBroKit parameter, there's no Mac-side default to mirror.
+    @Published var voice = ""
     @Published private(set) var isRecording = false
     @Published private(set) var isTranscribing = false
     @Published var voiceError: String?
@@ -1164,6 +1179,7 @@ final class ChatViewModel: ObservableObject {
         let session = BigBroVoiceSession(
             client: client,
             tools: activatedTools,
+            voice: voice.isEmpty ? nil : voice,
             model: selectedModelID,
             reasoningEffort: reasoningEffort
         )
@@ -1311,7 +1327,7 @@ final class ChatViewModel: ObservableObject {
 
     private func speak(_ text: String) async {
         do {
-            try await speechPlayer.play(client.speak(text))
+            try await speechPlayer.play(client.speak(text, voice: voice.isEmpty ? nil : voice))
         } catch {
             voiceError = "Speak failed: \(error.localizedDescription)"
         }
