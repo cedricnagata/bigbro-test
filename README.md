@@ -40,14 +40,14 @@ Privacy configuration is already in place, split across two locations because th
 The usage descriptions are build settings (`INFOPLIST_KEY_*`), merged in at build time:
 
 - `NSLocalNetworkUsageDescription` — Bonjour discovery and the TCP connection
-- `NSMicrophoneUsageDescription` — recording for the speech-to-text demo
+- `NSMicrophoneUsageDescription` — recording for voice input in chat
 
 ## Layout
 
 Two-panel split view:
 
-- **Left panel (280pt)** — connection status, missing model warnings, model picker, streaming toggle, per-tool toggles, speech demos, clear chat
-- **Right panel** — scrollable message history, pending image previews, input bar
+- **Left panel (280pt)** — connection status, missing model warnings, model picker, streaming toggle, per-tool toggles, speak-responses toggle, clear chat
+- **Right panel** — scrollable message history, pending image previews, input bar with mic button
 
 ## Connection flow
 
@@ -89,28 +89,24 @@ Each tool can be toggled individually in the left panel. The SDK's agentic loop 
 | `get_current_date` | Returns the current date and time from the device clock |
 | `get_device_info` | Returns the device name, model, and OS version |
 
+### Voice input (speech to text)
+
+The mic button in the input bar records a full utterance with `AVAudioRecorder`, then sends it
+to `client.transcribe(audio, format: "m4a")`. The transcript is appended to the message box (not
+auto-sent) so you can review or edit it first. Disabled while not connected; requires a speech
+backend enabled on the Mac (Settings → Speech) or transcription fails with an inline error.
+
+### Speak responses (text to speech)
+
+**Speak responses**, in the left panel, plays each assistant reply through the Mac's TTS
+backend once the full response has arrived — `client.speak(text)` streamed through
+`BigBroAudioPlayer`, so audio starts on the first chunk rather than after the whole utterance.
+Sending a new message stops any response still being spoken.
+
 ## Source
 
 ```
 bigbro-test/bigbro-test/
-├── ContentView.swift     — chat UI, ChatViewModel, tool definitions, image loading
-├── SpeechPanel.swift     — speech demos (speak, transcribe, converse)
+├── ContentView.swift     — chat UI, ChatViewModel, tool definitions, voice I/O, image loading
 └── bigbro_testApp.swift  — app entry point
 ```
-
-## Speech demos
-
-**Speech demos** in the left panel opens a sheet exercising the three speech APIs. All require a
-speech backend enabled on the Mac (Settings → Speech); the button is disabled until a Mac is
-connected.
-
-- **Text to speech** — `client.speak(text)` streamed through `BigBroAudioPlayer`, so audio
-  starts on the first chunk rather than after the whole utterance.
-- **Speech to text** — records a full utterance with `AVAudioRecorder`, then sends it to
-  `client.transcribe(audio, format: "m4a")`. Batch, not streaming.
-- **Voice loop** — `client.converse(...)`, which runs a chat turn and speaks it sentence by
-  sentence. Text and audio arrive interleaved on one stream, so the demo forwards audio chunks
-  into a second stream that playback drains concurrently.
-
-A quick round trip that needs no microphone: speak a phrase, then record the playback and
-confirm the transcript matches.

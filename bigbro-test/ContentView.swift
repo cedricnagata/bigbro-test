@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import PhotosUI
+import AVFoundation
 import BigBroKit
 
 // MARK: - Configuration
@@ -68,7 +69,6 @@ struct ContentView: View {
 
 private struct SettingsPanel: View {
     @ObservedObject var viewModel: ChatViewModel
-    @State private var showingSpeech = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -107,6 +107,14 @@ private struct SettingsPanel: View {
             }
             .toggleStyle(.switch)
 
+            Toggle(isOn: $viewModel.thinkingEnabled) {
+                Label("Thinking", systemImage: "brain")
+                    .font(.subheadline)
+            }
+            .toggleStyle(.switch)
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tools")
                     .font(.caption.bold())
@@ -132,7 +140,7 @@ private struct SettingsPanel: View {
 
             Divider()
 
-            SpeechSection(client: viewModel.client, showingSpeech: $showingSpeech)
+            SpeechSection(viewModel: viewModel)
 
             Button {
                 viewModel.clearChat()
@@ -146,24 +154,11 @@ private struct SettingsPanel: View {
             Spacer()
         }
         .padding(16)
-        .sheet(isPresented: $showingSpeech) {
-            NavigationStack {
-                SpeechDemoView(client: viewModel.client)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showingSpeech = false }
-                        }
-                    }
-            }
-        }
     }
 }
 
 private struct SpeechSection: View {
-    // Observed directly: SettingsPanel only watches the view model, so without this the
-    // button would never re-enable when the client connects.
-    @ObservedObject var client: BigBroClient
-    @Binding var showingSpeech: Bool
+    @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -171,16 +166,15 @@ private struct SpeechSection: View {
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
 
-            // Presented as a sheet rather than inline: the demos need more room than the
-            // 280pt sidebar gives them.
-            Button {
-                showingSpeech = true
-            } label: {
-                Label("Speech demos", systemImage: "waveform.circle")
+            Toggle(isOn: $viewModel.speakResponses) {
+                Label("Speak responses", systemImage: "speaker.wave.2")
                     .font(.subheadline)
             }
-            .buttonStyle(.bordered)
-            .disabled(!client.isConnected)
+            .toggleStyle(.switch)
+
+            Text("Uses the Mac's text-to-speech backend. Voice input (mic button) works the same way — both need Speech enabled in BigBro's settings on the Mac.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -357,6 +351,10 @@ private struct ChatPanel: View {
         return false
     }
 
+    /// True while voice input owns the input bar — typing, attaching, and sending are all
+    /// blocked so a transcript can't land mid-edit or mid-send.
+    private var voiceBusy: Bool { viewModel.isRecording || viewModel.isTranscribing }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
@@ -423,6 +421,14 @@ private struct ChatPanel: View {
                 .background(Color(.systemGray6))
             }
 
+            if let voiceError = viewModel.voiceError {
+                Text(voiceError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+            }
+
             Divider()
 
             HStack(spacing: 10) {
@@ -435,16 +441,18 @@ private struct ChatPanel: View {
                         .font(.system(size: 22))
                         .foregroundStyle(canType ? .blue : .secondary)
                 }
-                .disabled(!canType)
+                .disabled(!canType || voiceBusy)
                 .onChange(of: viewModel.imagePickerItems) { _, newItems in
                     viewModel.loadImages(from: newItems)
                 }
+
+                MicButton(viewModel: viewModel, canType: canType)
 
                 TextField(canType ? "Message" : "Not connected", text: $viewModel.input, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
                     .focused($inputFocused)
-                    .disabled(!canType)
+                    .disabled(!canType || voiceBusy)
                     .onSubmit { Task { await viewModel.send() } }
 
                 Button {
@@ -454,10 +462,32 @@ private struct ChatPanel: View {
                         .font(.system(size: 30))
                         .foregroundStyle(viewModel.canSend ? .blue : .secondary)
                 }
-                .disabled(!viewModel.canSend || !canType)
+                .disabled(!viewModel.canSend || !canType || voiceBusy)
             }
             .padding(12)
         }
+    }
+}
+
+private struct MicButton: View {
+    @ObservedObject var viewModel: ChatViewModel
+    let canType: Bool
+
+    var body: some View {
+        Button {
+            Task { await viewModel.toggleRecording() }
+        } label: {
+            if viewModel.isTranscribing {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 22, height: 22)
+            } else {
+                Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "mic.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(viewModel.isRecording ? .red : (canType ? .blue : .secondary))
+            }
+        }
+        .disabled((!canType && !viewModel.isRecording) || viewModel.isTranscribing)
     }
 }
 
@@ -507,6 +537,7 @@ private struct ModelDownloadBanner: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    @State private var thinkingExpanded = true
 
     var isUser: Bool { message.role == "user" }
 
@@ -525,12 +556,34 @@ private struct MessageBubble: View {
                         }
                     }
                 }
-                Text(message.text.isEmpty ? "…" : message.text)
+                if !message.thinking.isEmpty {
+                    DisclosureGroup(isExpanded: $thinkingExpanded) {
+                        Text(message.thinking)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .padding(.top, 4)
+                    } label: {
+                        Label("Thinking", systemImage: "brain")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                    }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(isUser ? Color.blue : Color(.systemGray5))
-                    .foregroundStyle(isUser ? .white : .primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                // Skipped while reasoning streams with no final text yet — the thinking
+                // disclosure above already signals activity, so a bare "…" bubble under it
+                // would be redundant.
+                if !message.text.isEmpty || message.thinking.isEmpty {
+                    Text(message.text.isEmpty ? "…" : message.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(isUser ? Color.blue : Color(.systemGray5))
+                        .foregroundStyle(isUser ? .white : .primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
                 if !message.model.isEmpty {
                     Text(message.model)
                         .font(.caption2)
@@ -561,9 +614,21 @@ final class ChatViewModel: ObservableObject {
     @Published var input: String = ""
     @Published var isLoading = false
     @Published var streamingEnabled = true
+    @Published var thinkingEnabled = false
     @Published var enabledTools: Set<String> = []
     @Published var selectedImages: [UIImage] = []
     @Published var imagePickerItems: [PhotosPickerItem] = []
+
+    // MARK: - Voice
+
+    @Published var speakResponses = false
+    @Published private(set) var isRecording = false
+    @Published private(set) var isTranscribing = false
+    @Published var voiceError: String?
+
+    private var recorder: AVAudioRecorder?
+    private var recordingURL: URL?
+    private let speechPlayer = BigBroAudioPlayer()
 
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
 
@@ -666,6 +731,7 @@ final class ChatViewModel: ObservableObject {
 
     func disconnect() {
         client.disconnect()
+        speechPlayer.stop()
         history = []
         messages = []
         state = .idle
@@ -693,6 +759,7 @@ final class ChatViewModel: ObservableObject {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         input = ""
+        speechPlayer.stop()  // barge-in: cut off any response still being spoken
 
         let imageData = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
         let imagesToDisplay = selectedImages
@@ -710,15 +777,103 @@ final class ChatViewModel: ObservableObject {
 
         var accumulated = ""
         do {
-            for try await delta in client.chat(history, model: selectedModel, streaming: streamingEnabled, tools: activatedTools) {
+            let stream = client.chat(
+                history,
+                model: selectedModel,
+                streaming: streamingEnabled,
+                tools: activatedTools,
+                think: thinkingEnabled,
+                onThinking: { [weak self] delta in
+                    Task { @MainActor in self?.messages[idx].thinking += delta }
+                }
+            )
+            for try await delta in stream {
                 accumulated += delta
                 messages[idx].text = accumulated
             }
             history.append(.assistant(accumulated))
+            if speakResponses, !accumulated.isEmpty {
+                Task { await speak(accumulated) }
+            }
         } catch {
             messages[idx].text = "Error: \(error.localizedDescription)"
         }
         isLoading = false
+    }
+
+    // MARK: - Voice input
+
+    func toggleRecording() async {
+        if isRecording {
+            await stopRecordingAndTranscribe()
+        } else {
+            await startRecording()
+        }
+    }
+
+    private func startRecording() async {
+        voiceError = nil
+        guard await AVAudioApplication.requestRecordPermission() else {
+            voiceError = "Microphone permission denied."
+            return
+        }
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setActive(true)
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bigbro-voice-\(UUID().uuidString).m4a")
+            let recorder = try AVAudioRecorder(url: url, settings: [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: 24_000,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            ])
+            recorder.record()
+
+            self.recorder = recorder
+            self.recordingURL = url
+            isRecording = true
+        } catch {
+            voiceError = "Could not start recording: \(error.localizedDescription)"
+        }
+    }
+
+    private func stopRecordingAndTranscribe() async {
+        recorder?.stop()
+        recorder = nil
+        isRecording = false
+
+        guard let url = recordingURL else { return }
+        recordingURL = nil
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        isTranscribing = true
+        defer { isTranscribing = false }
+
+        do {
+            let audio = try Data(contentsOf: url)
+            let transcript = try await client.transcribe(audio, format: "m4a")
+            guard !transcript.isEmpty else {
+                voiceError = "Didn't catch that — the transcript was empty."
+                return
+            }
+            input = input.isEmpty ? transcript : "\(input) \(transcript)"
+        } catch {
+            voiceError = "Transcription failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Voice output
+
+    private func speak(_ text: String) async {
+        do {
+            try await speechPlayer.play(client.speak(text))
+        } catch {
+            voiceError = "Speak failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Image loading
@@ -747,12 +902,14 @@ struct ChatMessage: Identifiable {
     var text: String
     var model: String
     var images: [UIImage]
+    var thinking: String
 
-    init(role: String, text: String, model: String = "", images: [UIImage] = []) {
+    init(role: String, text: String, model: String = "", images: [UIImage] = [], thinking: String = "") {
         self.role = role
         self.text = text
         self.model = model
         self.images = images
+        self.thinking = thinking
     }
 }
 
