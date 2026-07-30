@@ -6,12 +6,15 @@ import BigBroKit
 
 // MARK: - Configuration
 
-/// Models this app requires on the BigBro Mac. The Mac will prompt to download
-/// any that aren't already in Ollama when this device connects.
+/// Models this app requires on the BigBro Mac. The Mac checks these when this device
+/// connects and offers to download any that are missing.
+///
+/// Text only, and only gpt-oss-20b — it is the one text model BigBro runs, so there is
+/// nothing to choose between. Transcription and speech synthesis are Parakeet and Kokoro on
+/// the Mac; they are not listed here because they are not selectable, they load with the
+/// speech backend.
 private let requiredModels: [String] = [
-    "gpt-oss:20b",
-    "gemma4:e2b",
-    "qwen3-vl:30b"
+    "gpt-oss-20b"
 ]
 
 struct ContentView: View {
@@ -80,20 +83,12 @@ private struct SettingsPanel: View {
 
             Divider()
 
-            if !requiredModels.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Model")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                    Picker("Model", selection: $viewModel.selectedModel) {
-                        Text("BigBro Default").tag(Optional<String>.none)
-                        ForEach(requiredModels, id: \.self) { model in
-                            Text(model).tag(Optional(model))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Model")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Label("gpt-oss-20b", systemImage: "cpu")
+                    .font(.subheadline)
             }
 
             Divider()
@@ -415,8 +410,12 @@ private struct ChatPanel: View {
     }
 
     /// True while voice input owns the input bar — typing, attaching, and sending are all
-    /// blocked so a transcript can't land mid-edit or mid-send.
-    private var voiceBusy: Bool { viewModel.isRecording || viewModel.isTranscribing }
+    /// blocked so a transcript can't land mid-edit or mid-send. Hands-free mode counts:
+    /// it drives the same transcript, and a typed message mid-turn would interleave with a
+    /// spoken one.
+    private var voiceBusy: Bool {
+        viewModel.isRecording || viewModel.isTranscribing || viewModel.voiceActive
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -484,6 +483,10 @@ private struct ChatPanel: View {
                 .background(Color(.systemGray6))
             }
 
+            if viewModel.voiceActive {
+                VoiceStatusBar(viewModel: viewModel)
+            }
+
             if let voiceError = viewModel.voiceError {
                 Text(voiceError)
                     .font(.caption)
@@ -510,6 +513,8 @@ private struct ChatPanel: View {
                 }
 
                 MicButton(viewModel: viewModel, canType: canType)
+
+                VoiceModeButton(viewModel: viewModel, canType: canType)
 
                 TextField(canType ? "Message" : "Not connected", text: $viewModel.input, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -551,6 +556,105 @@ private struct MicButton: View {
             }
         }
         .disabled((!canType && !viewModel.isRecording) || viewModel.isTranscribing)
+    }
+}
+
+/// Starts and stops the hands-free loop. Distinct from `MicButton`, which is push-to-talk
+/// dictation into the text field — this one runs the whole conversation without touching the
+/// phone again.
+private struct VoiceModeButton: View {
+    @ObservedObject var viewModel: ChatViewModel
+    let canType: Bool
+
+    var body: some View {
+        Button {
+            Task { await viewModel.toggleVoiceMode() }
+        } label: {
+            Image(systemName: viewModel.voiceActive ? "waveform.circle.fill" : "waveform.circle")
+                .font(.system(size: 22))
+                .foregroundStyle(viewModel.voiceActive ? .green : (canType ? .blue : .secondary))
+        }
+        .disabled(!canType && !viewModel.voiceActive)
+    }
+}
+
+/// What the loop is doing right now, plus a live input level so it's obvious the microphone
+/// is hearing something — the hardest part of a hands-free UI is knowing whether it's your
+/// turn.
+private struct VoiceStatusBar: View {
+    @ObservedObject var viewModel: ChatViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .font(.system(size: 14))
+
+            Text(label)
+                .font(.caption.bold())
+                .foregroundStyle(tint)
+
+            if viewModel.voicePhase == .listening {
+                LevelMeter(level: viewModel.voiceLevel)
+            }
+
+            Spacer()
+
+            Button("End") { viewModel.stopVoiceMode() }
+                .font(.caption)
+                .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.1))
+    }
+
+    private var label: String {
+        switch viewModel.voicePhase {
+        case .idle:          return "Voice off"
+        case .preparing:     return "Getting ready…"
+        case .listening:     return "Listening"
+        case .transcribing:  return "Heard you…"
+        case .thinking:      return "Thinking"
+        case .speaking:      return "Speaking — talk to interrupt"
+        }
+    }
+
+    private var icon: String {
+        switch viewModel.voicePhase {
+        case .idle:         return "waveform.slash"
+        case .preparing:    return "hourglass"
+        case .listening:    return "ear"
+        case .transcribing: return "waveform"
+        case .thinking:     return "brain"
+        case .speaking:     return "speaker.wave.2.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch viewModel.voicePhase {
+        case .listening: return .green
+        case .speaking:  return .blue
+        case .idle:      return .secondary
+        default:         return .orange
+        }
+    }
+}
+
+private struct LevelMeter: View {
+    let level: Float
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule()
+                    .fill(Color.green)
+                    .frame(width: geo.size.width * CGFloat(max(0, min(1, level))))
+            }
+        }
+        .frame(width: 60, height: 4)
+        .animation(.linear(duration: 0.05), value: level)
     }
 }
 
@@ -697,6 +801,18 @@ final class ChatViewModel: ObservableObject {
     private var recordingURL: URL?
     private let speechPlayer = BigBroAudioPlayer()
 
+    // MARK: - Hands-free voice
+
+    /// Built lazily: it opens the microphone and owns the audio session, so creating one for
+    /// a user who never taps Voice would claim both for nothing.
+    private var voiceSession: BigBroVoiceSession?
+    @Published private(set) var voiceActive = false
+    @Published private(set) var voicePhase: BigBroVoiceSession.Phase = .idle
+    @Published private(set) var voiceLevel: Float = 0
+    /// Index of the assistant bubble the current spoken turn is streaming into.
+    private var voiceReplyIndex: Int?
+    private var voiceCancellables: Set<AnyCancellable> = []
+
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
 
     // MARK: - Tool definitions
@@ -740,7 +856,6 @@ final class ChatViewModel: ObservableObject {
         allTools.filter { enabledTools.contains($0.definition.function.name) }
     }
 
-    @Published var selectedModel: String? = requiredModels.first
     let client = BigBroClient(appName: "BigBro Test", requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
@@ -775,6 +890,9 @@ final class ChatViewModel: ObservableObject {
                 }
                 if state == .disconnected {
                     self.cancelPreload()
+                    // The loop has nothing to talk to; leaving the mic open would just burn
+                    // battery and transcribe into the void.
+                    if self.voiceActive { self.stopVoiceMode() }
                 }
             }
             .store(in: &cancellables)
@@ -851,6 +969,7 @@ final class ChatViewModel: ObservableObject {
 
     func disconnect() {
         cancelPreload()
+        stopVoiceMode()
         client.disconnect()
         speechPlayer.stop()
         history = []
@@ -900,7 +1019,6 @@ final class ChatViewModel: ObservableObject {
         do {
             let stream = client.chat(
                 history,
-                model: selectedModel,
                 streaming: streamingEnabled,
                 tools: activatedTools,
                 think: thinkingEnabled,
@@ -921,6 +1039,104 @@ final class ChatViewModel: ObservableObject {
             messages[idx].text = "Error: \(error.localizedDescription)"
         }
         isLoading = false
+    }
+
+    // MARK: - Hands-free voice mode
+
+    func toggleVoiceMode() async {
+        if voiceActive {
+            stopVoiceMode()
+        } else {
+            await startVoiceMode()
+        }
+    }
+
+    private func startVoiceMode() async {
+        guard client.isConnected else {
+            voiceError = "Connect to a BigBro Mac first."
+            return
+        }
+        voiceError = nil
+        speechPlayer.stop()   // the session has its own player; don't let two share the route
+
+        let session = BigBroVoiceSession(
+            client: client,
+            tools: activatedTools,
+            reasoningEffort: reasoningEffort
+        )
+        // Carry the typed conversation across, so switching to voice continues it rather
+        // than starting over.
+        session.setHistory(history)
+        observe(session)
+        voiceSession = session
+        voiceActive = true
+
+        await session.start()
+    }
+
+    func stopVoiceMode() {
+        voiceSession?.stop()
+        // The session is the authority on what was actually said and answered — adopt its
+        // history so a typed follow-up still has the spoken turns as context.
+        if let session = voiceSession {
+            history = session.history
+        }
+        voiceCancellables.removeAll()
+        voiceSession = nil
+        voiceActive = false
+        voicePhase = .idle
+        voiceLevel = 0
+        voiceReplyIndex = nil
+    }
+
+    /// Mirrors the session into the chat transcript, so spoken turns appear as bubbles
+    /// alongside typed ones instead of in a separate world.
+    private func observe(_ session: BigBroVoiceSession) {
+        session.$phase
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] phase in
+                guard let self else { return }
+                self.voicePhase = phase
+                // A finished turn releases the bubble, so the next one starts a fresh pair.
+                if phase == .listening { self.voiceReplyIndex = nil }
+            }
+            .store(in: &voiceCancellables)
+
+        session.$level
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.voiceLevel = $0 }
+            .store(in: &voiceCancellables)
+
+        session.$transcript
+            .receive(on: DispatchQueue.main)
+            .filter { !$0.isEmpty }
+            .removeDuplicates()
+            .sink { [weak self] heard in
+                guard let self else { return }
+                self.messages.append(ChatMessage(role: "user", text: heard))
+                let placeholder = ChatMessage(
+                    role: "assistant", text: "",
+                    model: self.client.connectedDevice?.name ?? ""
+                )
+                self.messages.append(placeholder)
+                self.voiceReplyIndex = self.messages.count - 1
+            }
+            .store(in: &voiceCancellables)
+
+        session.$reply
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] text in
+                guard let self, let index = self.voiceReplyIndex,
+                      self.messages.indices.contains(index) else { return }
+                self.messages[index].text = text
+            }
+            .store(in: &voiceCancellables)
+
+        session.$error
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .sink { [weak self] in self?.voiceError = $0 }
+            .store(in: &voiceCancellables)
     }
 
     // MARK: - Voice input

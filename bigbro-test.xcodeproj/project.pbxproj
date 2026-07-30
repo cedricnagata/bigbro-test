@@ -426,7 +426,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "bigbro-test/Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "BigBro uses the local network to accept connections from iOS devices.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Recording lets you dictate chat messages using BigBro's speech-to-text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BigBro uses the microphone to dictate messages and to hold hands-free spoken conversations.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -462,7 +462,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "bigbro-test/Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "BigBro uses the local network to accept connections from iOS devices.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Recording lets you dictate chat messages using BigBro's speech-to-text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BigBro uses the microphone to dictate messages and to hold hands-free spoken conversations.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
