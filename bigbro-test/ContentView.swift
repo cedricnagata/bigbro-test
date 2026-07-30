@@ -377,10 +377,10 @@ private struct ConnectionSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if viewModel.isPreloading {
+                if viewModel.isStartingModel {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text("Warming up the model…")
+                        Text("Starting \(viewModel.selectedModel.displayName)…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -848,7 +848,7 @@ final class ChatViewModel: ObservableObject {
     /// `nil` leaves the model's own default in place rather than asserting a level.
     @Published var reasoningEffort: ReasoningEffort?
     /// True while the Mac is materializing the model's weights ahead of the first message.
-    @Published private(set) var isPreloading = false
+    @Published private(set) var isStartingModel = false
     @Published var enabledTools: Set<String> = []
     @Published var selectedImages: [UIImage] = []
     @Published var imagePickerItems: [PhotosPickerItem] = []
@@ -919,7 +919,16 @@ final class ChatViewModel: ObservableObject {
         allTools.filter { enabledTools.contains($0.definition.function.name) }
     }
 
-    @Published var selectedModelID: String = availableModels[0].id
+    @Published var selectedModelID: String = availableModels[0].id {
+        didSet {
+            guard oldValue != selectedModelID, client.isConnected else { return }
+            // Start the newly picked model so the next message doesn't pay for it. The old one
+            // is left running: models are shared across paired devices, so stopping one here
+            // could take it out from under another device that is mid-conversation.
+            cancelStartModel()
+            startModel()
+        }
+    }
 
     var selectedModel: TestModel {
         availableModels.first { $0.id == selectedModelID } ?? availableModels[0]
@@ -943,8 +952,8 @@ final class ChatViewModel: ObservableObject {
     let client = BigBroClient(appName: "BigBro Test", requiredModels: requiredModels)
     private var history: [Message] = []
     private var cancellables: Set<AnyCancellable> = []
-    private var preloadTask: Task<Void, Never>?
-    private var preloadGeneration = 0
+    private var startModelTask: Task<Void, Never>?
+    private var startModelGeneration = 0
 
     init() {
         client.$connectionState
@@ -970,10 +979,10 @@ final class ChatViewModel: ObservableObject {
                 // connection arrived — auto-reconnect lands here without going through
                 // pair(), so preloading only from pair() would miss the common case.
                 if state == .connected {
-                    self.preloadModel()
+                    self.startModel()
                 }
                 if state == .disconnected {
-                    self.cancelPreload()
+                    self.cancelStartModel()
                     // The loop has nothing to talk to; leaving the mic open would just burn
                     // battery and transcribe into the void.
                     if self.voiceActive { self.stopVoiceMode() }
@@ -1004,55 +1013,59 @@ final class ChatViewModel: ObservableObject {
         do {
             let approved = try await client.pair(with: device)
             state = approved ? .chat : .error("Pairing was denied on the Mac.")
-            if approved { preloadModel() }
+            if approved { startModel() }
         } catch {
             state = .error(error.localizedDescription)
         }
     }
 
-    /// Asks the Mac to load the chat model into memory now, rather than letting that cost
-    /// land on the user's first message — for a 20B model that is several seconds of
-    /// materializing weights, and it is the difference between a chat screen that answers
+    /// Asks the Mac to start the selected model — put its weights in memory — now, rather
+    /// than letting that cost land on the user's first message. For a 20B model that is
+    /// several seconds, and it is the difference between a chat screen that answers
     /// immediately and one that appears to hang on the first send.
     ///
+    /// Deliberately has no stop counterpart here. Models are shared across every paired
+    /// device, so this app stopping one on its way out would take it away from whatever else
+    /// is using it; stopping belongs to whoever owns the Mac, in BigBro's Settings.
+    ///
     /// Fire-and-forget by design. Every failure mode here is one the next `chat()` handles
-    /// on its own: a model still downloading, a Mac too old to know the `preload` message, a
+    /// on its own: a model still downloading, a Mac too old to know the `run` message, a
     /// connection that drops in between. None of them is worth an error in the UI for an
     /// optimization the user never asked for, so they are logged and dropped.
-    func preloadModel() {
-        guard preloadTask == nil else { return }   // already warming; a second ask is redundant
-        isPreloading = true
-        // A cancelled preload can still be sitting in `await` when the next connection starts
-        // one — cancelling an unstructured Task does not force it to return. Stamping each
-        // attempt means the stale one's cleanup can't clear the live one's state on its way out.
-        preloadGeneration &+= 1
-        let generation = preloadGeneration
-        preloadTask = Task { [weak self] in
+    func startModel() {
+        guard startModelTask == nil else { return }   // already starting; a second ask is redundant
+        isStartingModel = true
+        // A cancelled start can still be sitting in `await` when the next one begins —
+        // cancelling an unstructured Task does not force it to return. Stamping each attempt
+        // means the stale one's cleanup can't clear the live one's state on its way out.
+        startModelGeneration &+= 1
+        let generation = startModelGeneration
+        startModelTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.client.preloadModel()
-                print("[bigbro-test] preload complete")
+                try await self.client.runModel(self.selectedModelID)
+                print("[bigbro-test] model running")
             } catch is CancellationError {
                 // Disconnected while warming — nothing to report.
             } catch {
-                print("[bigbro-test] preload skipped: \(error.localizedDescription)")
+                print("[bigbro-test] run skipped: \(error.localizedDescription)")
             }
-            guard self.preloadGeneration == generation else { return }
-            self.isPreloading = false
-            self.preloadTask = nil
+            guard self.startModelGeneration == generation else { return }
+            self.isStartingModel = false
+            self.startModelTask = nil
         }
     }
 
     /// Abandons any in-flight preload without waiting for it to notice.
-    private func cancelPreload() {
-        preloadGeneration &+= 1
-        preloadTask?.cancel()
-        preloadTask = nil
-        isPreloading = false
+    private func cancelStartModel() {
+        startModelGeneration &+= 1
+        startModelTask?.cancel()
+        startModelTask = nil
+        isStartingModel = false
     }
 
     func disconnect() {
-        cancelPreload()
+        cancelStartModel()
         stopVoiceMode()
         client.disconnect()
         speechPlayer.stop()
