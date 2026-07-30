@@ -6,6 +6,18 @@ import BigBroKit
 
 // MARK: - Configuration
 
+/// What reasoning options a model offers — mirrors BigBro's own `ReasoningStyle`, collapsed to
+/// what the UI needs to decide which picker to show.
+enum ReasoningOptions: Hashable {
+    /// No reasoning phase at all — nothing to pick.
+    case none
+    /// Can be switched off entirely (Qwen3's `enable_thinking`), but has no separate depth
+    /// when on.
+    case toggleOnly
+    /// Always reasons; only how much is adjustable (gpt-oss's low/medium/high).
+    case effortLevels
+}
+
 /// A text model this app can ask the Mac to run, and what it can do.
 ///
 /// Capabilities are mirrored from BigBro's own catalog rather than discovered, so the UI can
@@ -16,20 +28,17 @@ struct TestModel: Identifiable, Hashable {
     let id: String
     let displayName: String
     let supportsTools: Bool
-    /// Whether the model produces a reasoning trace at all.
-    let supportsReasoning: Bool
-    /// Whether low/medium/high means anything. Only gpt-oss has a real effort dial.
-    let supportsReasoningEffort: Bool
+    let reasoningOptions: ReasoningOptions
 }
 
 private let availableModels: [TestModel] = [
-    TestModel(id: "gpt-oss-20b",  displayName: "gpt-oss 20B",  supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: true),
-    TestModel(id: "qwen3-8b",     displayName: "Qwen3 8B",     supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: false),
-    TestModel(id: "qwen3-4b",     displayName: "Qwen3 4B",     supportsTools: true,  supportsReasoning: true,  supportsReasoningEffort: false),
-    TestModel(id: "llama-3.1-8b", displayName: "Llama 3.1 8B", supportsTools: true,  supportsReasoning: false, supportsReasoningEffort: false),
-    TestModel(id: "llama-3.2-3b", displayName: "Llama 3.2 3B", supportsTools: true,  supportsReasoning: false, supportsReasoningEffort: false),
-    TestModel(id: "gemma-4-e2b",  displayName: "Gemma 4 E2B",  supportsTools: false, supportsReasoning: false, supportsReasoningEffort: false),
-    TestModel(id: "gemma-3-1b",   displayName: "Gemma 3 1B",   supportsTools: false, supportsReasoning: false, supportsReasoningEffort: false),
+    TestModel(id: "gpt-oss-20b",  displayName: "gpt-oss 20B",  supportsTools: true,  reasoningOptions: .effortLevels),
+    TestModel(id: "qwen3-8b",     displayName: "Qwen3 8B",     supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "qwen3-4b",     displayName: "Qwen3 4B",     supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "llama-3.1-8b", displayName: "Llama 3.1 8B", supportsTools: true,  reasoningOptions: .none),
+    TestModel(id: "llama-3.2-3b", displayName: "Llama 3.2 3B", supportsTools: true,  reasoningOptions: .none),
+    TestModel(id: "gemma-4-e2b",  displayName: "Gemma 4 E2B",  supportsTools: false, reasoningOptions: .none),
+    TestModel(id: "gemma-3-1b",   displayName: "Gemma 3 1B",   supportsTools: false, reasoningOptions: .none),
 ]
 
 /// Models the Mac should have ready before this device is useful — just the default.
@@ -43,6 +52,36 @@ private let availableModels: [TestModel] = [
 /// (download / run / stop / remove), and this app only ever asks for "speech" as a whole.
 private let requiredModels: [String] = [
     "gpt-oss-20b"
+]
+
+/// Kokoro voice identifiers the Mac's speech backend (FluidAudio) ships, mirrored from
+/// `TtsConstants.availableVoices` — bigbro-test has no dependency on FluidAudio itself (that's
+/// Mac-only), so this is a hand-kept copy, same discipline as `availableModels` above.
+///
+/// Only American English (`af_*`, `am_*`) is regression-tested; the rest are present in the
+/// model and work, but are unverified per FluidAudio's own docs.
+private let availableVoices: [String] = [
+    // American English (tested)
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore", "af_nicole", "af_nova",
+    "af_river", "af_sarah", "af_sky", "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
+    "am_michael", "am_onyx", "am_puck", "am_santa",
+    // British English (experimental)
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    // Spanish, LATAM (experimental)
+    "ef_dora", "em_alex", "em_santa",
+    // French (experimental)
+    "ff_siwis",
+    // Hindi (experimental)
+    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+    // Italian (experimental)
+    "if_sara", "im_nicola",
+    // Japanese (experimental)
+    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+    // Brazilian Portuguese (experimental)
+    "pf_dora", "pm_alex", "pm_santa",
+    // Mandarin Chinese (experimental)
+    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi", "zm_yunjian", "zm_yunxi", "zm_yunxia",
+    "zm_yunyang",
 ]
 
 struct ContentView: View {
@@ -102,6 +141,12 @@ private struct SettingsPanel: View {
     @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
+        ScrollView {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             ConnectionSection(viewModel: viewModel, client: viewModel.client)
 
@@ -139,22 +184,9 @@ private struct SettingsPanel: View {
             }
             .toggleStyle(.switch)
 
-            Toggle(isOn: $viewModel.thinkingEnabled) {
-                Label("Thinking", systemImage: "brain")
-                    .font(.subheadline)
-            }
-            .toggleStyle(.switch)
-            .disabled(!viewModel.selectedModel.supportsReasoning)
-
-            Text(viewModel.selectedModel.supportsReasoning
-                 ? "Shows the model's reasoning as it streams. It reasons either way — this only decides whether you see it."
-                 : "\(viewModel.selectedModel.displayName) has no reasoning phase — there's no trace to show.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if viewModel.selectedModel.supportsReasoningEffort {
+            if viewModel.selectedModel.reasoningOptions != .none {
                 Divider()
-                ReasoningEffortSection(viewModel: viewModel)
+                ReasoningSection(viewModel: viewModel)
             }
 
             Divider()
@@ -201,32 +233,32 @@ private struct SettingsPanel: View {
             }
             .buttonStyle(.bordered)
             .disabled(viewModel.messages.isEmpty)
-
-            Spacer()
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// How hard the model thinks before answering — as opposed to the Thinking toggle above,
-/// which only decides whether the reasoning is shown.
+/// How the selected model reasons, as a single set of options rather than a toggle plus a
+/// separate effort dial — what's offered depends entirely on the model:
 ///
-/// There is no "off" option because gpt-oss has none: the Harmony prompt format carries an
-/// effort level and nothing else, and the model was trained on exactly these three values.
-/// "Low" is as close to off as the model gets.
-private struct ReasoningEffortSection: View {
+/// - gpt-oss always reasons via the Harmony template, which carries only a depth (low/medium/
+///   high) and no off switch, so there is no "None" option.
+/// - Qwen3's template takes a plain `enable_thinking` bool — no depth, just on or off — so
+///   "None" is one of exactly two options.
+/// - A model with no reasoning phase at all offers nothing; the caller hides this view.
+private struct ReasoningSection: View {
     @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Reasoning effort")
+            Text("Reasoning")
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
 
-            Picker("Reasoning effort", selection: $viewModel.reasoningEffort) {
-                Text("Model default").tag(Optional<ReasoningEffort>.none)
-                ForEach(ReasoningEffort.allCases, id: \.self) { effort in
-                    Text(effort.rawValue.capitalized).tag(Optional(effort))
+            Picker("Reasoning", selection: $viewModel.reasoningEffort) {
+                ForEach(options, id: \.self) { option in
+                    Text(label(for: option)).tag(option)
                 }
             }
             .pickerStyle(.segmented)
@@ -238,18 +270,39 @@ private struct ReasoningEffortSection: View {
         }
     }
 
+    /// The only values `reasoningEffort` should ever hold for this model — `ChatViewModel`
+    /// normalizes to one of these whenever the selected model changes.
+    private var options: [ReasoningEffort?] {
+        switch viewModel.selectedModel.reasoningOptions {
+        case .none:         return []
+        case .toggleOnly:   return [nil, .medium]
+        case .effortLevels: return [.low, .medium, .high]
+        }
+    }
+
+    private func label(for option: ReasoningEffort?) -> String {
+        switch (viewModel.selectedModel.reasoningOptions, option) {
+        case (.toggleOnly, nil):  return "None"
+        case (.toggleOnly, _):    return "Reasoning"
+        case (_, nil):            return "None"
+        case (_, let effort?):    return effort.rawValue.capitalized
+        }
+    }
+
     private var detail: String {
-        switch viewModel.reasoningEffort {
-        // Not simply "medium": with no effort named, the Mac falls back to reading the
-        // Thinking toggle, and treats it being off as a request for speed. Saying "the model
-        // default" here would be wrong half the time.
+        switch viewModel.selectedModel.reasoningOptions {
         case .none:
-            return viewModel.thinkingEnabled
-                ? "Left to the Mac — medium, the gpt-oss default."
-                : "Left to the Mac — low, because Thinking is off."
-        case .low?:    return "Shortest analysis pass — fastest answer, weakest on multi-step problems."
-        case .medium?: return "Balanced. The gpt-oss default."
-        case .high?:   return "Longest analysis pass — best on hard problems, slowest to first token."
+            return ""
+        case .toggleOnly:
+            return viewModel.reasoningEffort == nil
+                ? "\(viewModel.selectedModel.displayName) won't reason for this turn."
+                : "\(viewModel.selectedModel.displayName) reasons before answering — no adjustable depth, just on or off."
+        case .effortLevels:
+            switch viewModel.reasoningEffort {
+            case .low:  return "Shortest analysis pass — fastest answer, weakest on multi-step problems."
+            case .high: return "Longest analysis pass — best on hard problems, slowest to first token."
+            default:    return "Balanced. The gpt-oss default."
+            }
         }
     }
 }
@@ -269,16 +322,23 @@ private struct SpeechSection: View {
             }
             .toggleStyle(.switch)
 
-            // Voice is a BigBroKit-side parameter, not a Mac setting — there's nothing to pick
-            // on the Mac to keep in sync with. Empty uses `BigBroClient.defaultVoice`.
-            LabeledContent("Voice") {
-                TextField(BigBroClient.defaultVoice, text: $viewModel.voice)
+            // Only meaningful once something is going to be spoken. Voice is a BigBroKit-side
+            // parameter, not a Mac setting, and a closed list rather than free text: an
+            // unrecognized id just fails synthesis on the Mac with no clue why.
+            if viewModel.speakResponses {
+                HStack {
+                    Text("Voice")
+                        .font(.subheadline)
+                    Spacer()
+                    Picker("Voice", selection: $viewModel.voice) {
+                        ForEach(availableVoices, id: \.self) { voice in
+                            Text(voice).tag(voice)
+                        }
+                    }
                     .labelsHidden()
-                    .frame(maxWidth: .infinity)
+                    .pickerStyle(.menu)
+                }
             }
-            Text("Kokoro speaker id, e.g. `af_heart`, `am_adam`, `bf_emma`. Applies to typed and hands-free replies alike.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
 
             Text("Uses the Mac's on-device text-to-speech and transcription — both start automatically on first use, the same way a language model does.")
                 .font(.caption2)
@@ -856,9 +916,11 @@ final class ChatViewModel: ObservableObject {
     @Published var input: String = ""
     @Published var isLoading = false
     @Published var streamingEnabled = true
-    @Published var thinkingEnabled = false
-    /// `nil` leaves the model's own default in place rather than asserting a level.
-    @Published var reasoningEffort: ReasoningEffort?
+    /// The only picker `ReasoningSection` exposes. Meaning depends on the model:
+    /// `.effortLevels` models never see `nil` (normalized to `.medium` on selection);
+    /// `.toggleOnly` models treat `nil` as "don't reason" and any non-nil as "reason". Starts
+    /// at `.medium` since the default model (gpt-oss) is `.effortLevels` and requires a value.
+    @Published var reasoningEffort: ReasoningEffort? = .medium
     /// True while the Mac is materializing the model's weights ahead of the first message.
     @Published private(set) var isStartingModel = false
     @Published var enabledTools: Set<String> = []
@@ -868,9 +930,9 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Voice
 
     @Published var speakResponses = false
-    /// Kokoro voice id passed to `speak`/`converse`. Empty uses `BigBroClient.defaultVoice` —
-    /// voice selection is a BigBroKit parameter, there's no Mac-side default to mirror.
-    @Published var voice = ""
+    /// Kokoro voice id passed to `speak`/`converse` — a BigBroKit parameter, not a Mac
+    /// setting, so this is the one place it's chosen. Always one of `availableVoices`.
+    @Published var voice = BigBroClient.defaultVoice
     @Published private(set) var isRecording = false
     @Published private(set) var isTranscribing = false
     @Published var voiceError: String?
@@ -936,7 +998,12 @@ final class ChatViewModel: ObservableObject {
 
     @Published var selectedModelID: String = availableModels[0].id {
         didSet {
-            guard oldValue != selectedModelID, client.isConnected else { return }
+            guard oldValue != selectedModelID else { return }
+            // Otherwise a value picked for the old model (e.g. `.high` from gpt-oss) could
+            // persist as a stored value the new model's `ReasoningSection` never presents.
+            normalizeReasoningEffort(for: selectedModel)
+
+            guard client.isConnected else { return }
             // Start the newly picked model so the next message doesn't pay for it. The old one
             // is left running: models are shared across paired devices, so stopping one here
             // could take it out from under another device that is mid-conversation.
@@ -949,6 +1016,29 @@ final class ChatViewModel: ObservableObject {
         availableModels.first { $0.id == selectedModelID } ?? availableModels[0]
     }
 
+    private func normalizeReasoningEffort(for model: TestModel) {
+        switch model.reasoningOptions {
+        case .none:
+            break
+        case .toggleOnly:
+            if reasoningEffort != nil { reasoningEffort = .medium }
+        case .effortLevels:
+            if reasoningEffort == nil { reasoningEffort = .medium }
+        }
+    }
+
+    /// Whether to ask the Mac for the model's reasoning trace. There's nothing left to gate
+    /// independently of `reasoningEffort` now that reasoning is a single set of options rather
+    /// than a toggle plus a separate effort dial — a model reasons (and streams a trace) iff
+    /// the picked option says so.
+    var wantsReasoningTrace: Bool {
+        switch selectedModel.reasoningOptions {
+        case .none:         return false
+        case .toggleOnly:   return reasoningEffort != nil
+        case .effortLevels: return true
+        }
+    }
+
     /// One line describing what the picked model can do, so the difference between models is
     /// visible before a request rather than inferred from a reply that quietly ignored half
     /// the settings.
@@ -956,10 +1046,10 @@ final class ChatViewModel: ObservableObject {
         let model = selectedModel
         var parts: [String] = []
         parts.append(model.supportsTools ? "Tools" : "No tools")
-        switch (model.supportsReasoning, model.supportsReasoningEffort) {
-        case (false, _): parts.append("no reasoning")
-        case (true, true): parts.append("reasoning with low/med/high")
-        case (true, false): parts.append("reasoning on/off")
+        switch model.reasoningOptions {
+        case .none:         parts.append("no reasoning")
+        case .toggleOnly:   parts.append("reasoning on/off")
+        case .effortLevels: parts.append("reasoning with low/med/high")
         }
         return parts.joined(separator: " · ")
     }
@@ -1134,7 +1224,7 @@ final class ChatViewModel: ObservableObject {
                 model: selectedModelID,
                 streaming: streamingEnabled,
                 tools: activatedTools,
-                think: thinkingEnabled,
+                think: wantsReasoningTrace,
                 reasoningEffort: reasoningEffort,
                 onThinking: { [weak self] delta in
                     Task { @MainActor in self?.messages[idx].thinking += delta }
@@ -1179,7 +1269,7 @@ final class ChatViewModel: ObservableObject {
         let session = BigBroVoiceSession(
             client: client,
             tools: activatedTools,
-            voice: voice.isEmpty ? nil : voice,
+            voice: voice,
             model: selectedModelID,
             reasoningEffort: reasoningEffort
         )
@@ -1327,7 +1417,7 @@ final class ChatViewModel: ObservableObject {
 
     private func speak(_ text: String) async {
         do {
-            try await speechPlayer.play(client.speak(text, voice: voice.isEmpty ? nil : voice))
+            try await speechPlayer.play(client.speak(text, voice: voice))
         } catch {
             voiceError = "Speak failed: \(error.localizedDescription)"
         }
