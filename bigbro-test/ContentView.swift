@@ -1268,9 +1268,9 @@ final class ChatViewModel: ObservableObject {
         // from BigBro's catalog. The settings UI already prevents enabling them knowingly.
         let session = BigBroVoiceSession(
             client: client,
+            model: selectedModelID,
             tools: activatedTools,
             voice: voice,
-            model: selectedModelID,
             reasoningEffort: reasoningEffort
         )
         // Carry the typed conversation across, so switching to voice continues it rather
