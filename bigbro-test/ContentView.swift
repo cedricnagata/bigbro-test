@@ -1425,7 +1425,13 @@ final class ChatViewModel: ObservableObject {
 
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default)
+            // `.defaultToSpeaker` matters: `.playAndRecord` without it routes playback to
+            // the receiver — the earpiece — so anything spoken afterwards is barely
+            // audible unless the phone is held to your ear. `BigBroAudioPlayer` sets
+            // `.playback` again when it starts, but the category outlives this recording
+            // until then.
+            try session.setCategory(.playAndRecord, mode: .default,
+                                    options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
 
             let url = FileManager.default.temporaryDirectory
