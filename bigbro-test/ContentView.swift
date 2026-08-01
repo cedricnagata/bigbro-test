@@ -1277,6 +1277,11 @@ final class ChatViewModel: ObservableObject {
                     messages[idx].text = accumulated
                 case .audio(let data):
                     sink.yield(data)
+                case .speechFailed(let message):
+                    // Keep the answer. Only the speaking of it failed, and it is already
+                    // on screen — replacing it with the error would throw away the reply
+                    // to report that a voice did not work.
+                    voiceError = "Speak failed: \(message)"
                 case .transcript:
                     break   // only produced by the audio-in overload
                 }
