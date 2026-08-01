@@ -685,12 +685,19 @@ private struct MicButton: View {
                     .controlSize(.small)
                     .frame(width: 22, height: 22)
             } else {
-                Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "mic.circle")
+                // Stop while recording *or* speaking: in both states the useful action is
+                // to end what is happening, and starting a recording over the assistant's
+                // own voice would just record it.
+                let isStopping = viewModel.isRecording || viewModel.isSpeaking
+                Image(systemName: isStopping ? "stop.circle.fill" : "mic.circle")
                     .font(.system(size: 22))
-                    .foregroundStyle(viewModel.isRecording ? .red : (canType ? .blue : .secondary))
+                    .foregroundStyle(isStopping ? .red : (canType ? .blue : .secondary))
             }
         }
-        .disabled((!canType && !viewModel.isRecording) || viewModel.isTranscribing)
+        .disabled(
+            (!canType && !viewModel.isRecording && !viewModel.isSpeaking)
+            || viewModel.isTranscribing
+        )
     }
 }
 
@@ -934,6 +941,8 @@ final class ChatViewModel: ObservableObject {
     /// setting, so this is the one place it's chosen. Always one of `availableVoices`.
     @Published var voice = BigBroClient.defaultVoice
     @Published private(set) var isRecording = false
+    /// True while a spoken reply is playing, so the mic button can offer to stop it.
+    @Published private(set) var isSpeaking = false
     @Published private(set) var isTranscribing = false
     @Published var voiceError: String?
 
@@ -1256,6 +1265,8 @@ final class ChatViewModel: ObservableObject {
     /// playback starts on the first chunk.
     private func streamSpokenReply(at idx: Int) async throws -> String {
         let (audio, sink) = AsyncThrowingStream<Data, Error>.makeStream()
+        isSpeaking = true
+        defer { isSpeaking = false }
         let playback = Task { try await speechPlayer.play(audio) }
 
         var accumulated = ""
@@ -1329,7 +1340,8 @@ final class ChatViewModel: ObservableObject {
             model: selectedModelID,
             tools: activatedTools,
             voice: voice,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            speaksReplies: speakResponses
         )
         // Carry the typed conversation across, so switching to voice continues it rather
         // than starting over.
@@ -1409,11 +1421,22 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Voice input
 
     func toggleRecording() async {
-        if isRecording {
+        if isSpeaking {
+            // Stop the answer rather than start recording over it. The mic would otherwise
+            // pick up the assistant's own voice, and there is no echo cancellation on this
+            // path — it is push-to-talk, not the hands-free loop.
+            stopSpeaking()
+        } else if isRecording {
             await stopRecordingAndTranscribe()
         } else {
             await startRecording()
         }
+    }
+
+    /// Cuts off a spoken reply. The text stays; only the audio stops.
+    func stopSpeaking() {
+        speechPlayer.stop()
+        isSpeaking = false
     }
 
     private func startRecording() async {
