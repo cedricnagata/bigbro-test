@@ -936,7 +936,17 @@ final class ChatViewModel: ObservableObject {
 
     // MARK: - Voice
 
-    @Published var speakResponses = false
+    @Published var speakResponses = false {
+        didSet {
+            guard speakResponses != oldValue else { return }
+            // The switch is read at send time for typed replies, but a running voice
+            // session was given its value at construction and would keep speaking (or
+            // stay silent) until restarted.
+            voiceSession?.speaksReplies = speakResponses
+            // Turning it off mid-answer should stop the answer, not let it finish.
+            if !speakResponses { stopSpeaking() }
+        }
+    }
     /// Kokoro voice id passed to `speak`/`converse` — a BigBroKit parameter, not a Mac
     /// setting, so this is the one place it's chosen. Always one of `availableVoices`.
     @Published var voice = BigBroClient.defaultVoice
@@ -959,7 +969,7 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var voicePhase: BigBroVoiceSession.Phase = .idle
     @Published private(set) var voiceLevel: Float = 0
     /// Index of the assistant bubble the current spoken turn is streaming into.
-    private var voiceReplyIndex: Int?
+    private var voiceReplyID: UUID?
     private var voiceCancellables: Set<AnyCancellable> = []
 
     var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading }
@@ -1188,9 +1198,27 @@ final class ChatViewModel: ObservableObject {
         state = .idle
     }
 
+    /// Updates a message by identity.
+    ///
+    /// Indices do not survive the list changing underneath a stream — clearing the chat
+    /// mid-answer left writes landing on the wrong row or on no row at all, which is why
+    /// replies stopped appearing. A message that has since been cleared is simply not
+    /// there, and the update is dropped.
+    private func update(_ id: UUID, _ mutate: (inout ChatMessage) -> Void) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&messages[index])
+    }
+
     func clearChat() {
         messages = []
         history = []
+        // The bubble any in-flight turn was writing into is gone; without this the next
+        // reply is written to a row that no longer exists and never appears.
+        voiceReplyID = nil
+        // The Mac keeps no conversation state, but the session does — clearing the screen
+        // while it still remembers would leave the model answering from a history the
+        // user believes they deleted.
+        voiceSession?.resetConversation()
     }
 
     func setAutoReconnect(_ enabled: Bool) {
@@ -1224,12 +1252,12 @@ final class ChatViewModel: ObservableObject {
 
         let placeholder = ChatMessage(role: "assistant", text: "", model: client.connectedDevice?.name ?? "")
         messages.append(placeholder)
-        let idx = messages.count - 1
+        let replyID = placeholder.id
 
         var accumulated = ""
         do {
             if speakResponses {
-                accumulated = try await streamSpokenReply(at: idx)
+                accumulated = try await streamSpokenReply(into: replyID)
             } else {
                 let stream = client.chat(
                     history,
@@ -1239,17 +1267,17 @@ final class ChatViewModel: ObservableObject {
                     think: wantsReasoningTrace,
                     reasoningEffort: reasoningEffort,
                     onThinking: { [weak self] delta in
-                        Task { @MainActor in self?.messages[idx].thinking += delta }
+                        Task { @MainActor in self?.update(replyID) { $0.thinking += delta } }
                     }
                 )
                 for try await delta in stream {
                     accumulated += delta
-                    messages[idx].text = accumulated
+                    update(replyID) { $0.text = accumulated }
                 }
             }
             history.append(.assistant(accumulated))
         } catch {
-            messages[idx].text = "Error: \(error.localizedDescription)"
+            update(replyID) { $0.text = "Error: \(error.localizedDescription)" }
         }
         isLoading = false
     }
@@ -1263,7 +1291,7 @@ final class ChatViewModel: ObservableObject {
     ///
     /// Audio is forwarded into the player as it arrives rather than collected first, so
     /// playback starts on the first chunk.
-    private func streamSpokenReply(at idx: Int) async throws -> String {
+    private func streamSpokenReply(into replyID: UUID) async throws -> String {
         let (audio, sink) = AsyncThrowingStream<Data, Error>.makeStream()
         isSpeaking = true
         defer { isSpeaking = false }
@@ -1279,13 +1307,13 @@ final class ChatViewModel: ObservableObject {
                 think: wantsReasoningTrace,
                 reasoningEffort: reasoningEffort,
                 onThinking: { [weak self] delta in
-                    Task { @MainActor in self?.messages[idx].thinking += delta }
+                    Task { @MainActor in self?.update(replyID) { $0.thinking += delta } }
                 }
             ) {
                 switch event {
                 case .text(let delta):
                     accumulated += delta
-                    messages[idx].text = accumulated
+                    update(replyID) { $0.text = accumulated }
                 case .audio(let data):
                     sink.yield(data)
                 case .speechFailed(let message):
@@ -1365,7 +1393,7 @@ final class ChatViewModel: ObservableObject {
         voiceActive = false
         voicePhase = .idle
         voiceLevel = 0
-        voiceReplyIndex = nil
+        voiceReplyID = nil
     }
 
     /// Mirrors the session into the chat transcript, so spoken turns appear as bubbles
@@ -1377,7 +1405,7 @@ final class ChatViewModel: ObservableObject {
                 guard let self else { return }
                 self.voicePhase = phase
                 // A finished turn releases the bubble, so the next one starts a fresh pair.
-                if phase == .listening { self.voiceReplyIndex = nil }
+                if phase == .listening { self.voiceReplyID = nil }
             }
             .store(in: &voiceCancellables)
 
@@ -1389,25 +1417,28 @@ final class ChatViewModel: ObservableObject {
         session.$transcript
             .receive(on: DispatchQueue.main)
             .filter { !$0.isEmpty }
-            .removeDuplicates()
             .sink { [weak self] heard in
                 guard let self else { return }
+                // One bubble per turn, gated on not already having one rather than on the
+                // text being new. `removeDuplicates` looked equivalent and was not: saying
+                // the same thing twice, or repeating yourself after clearing the chat,
+                // suppressed the second turn entirely — no question, no answer.
+                guard self.voiceReplyID == nil else { return }
                 self.messages.append(ChatMessage(role: "user", text: heard))
                 let placeholder = ChatMessage(
                     role: "assistant", text: "",
                     model: self.client.connectedDevice?.name ?? ""
                 )
                 self.messages.append(placeholder)
-                self.voiceReplyIndex = self.messages.count - 1
+                self.voiceReplyID = placeholder.id
             }
             .store(in: &voiceCancellables)
 
         session.$reply
             .receive(on: DispatchQueue.main)
             .sink { [weak self] text in
-                guard let self, let index = self.voiceReplyIndex,
-                      self.messages.indices.contains(index) else { return }
-                self.messages[index].text = text
+                guard let self, let replyID = self.voiceReplyID else { return }
+                self.update(replyID) { $0.text = text }
             }
             .store(in: &voiceCancellables)
 
@@ -1434,8 +1465,12 @@ final class ChatViewModel: ObservableObject {
     }
 
     /// Cuts off a spoken reply. The text stays; only the audio stops.
+    ///
+    /// Covers both players: the typed path owns `speechPlayer`, and a hands-free session
+    /// has its own. Stopping only one leaves whichever is actually speaking to finish.
     func stopSpeaking() {
         speechPlayer.stop()
+        voiceSession?.stopSpeaking()
         isSpeaking = false
     }
 
