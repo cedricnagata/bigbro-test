@@ -1235,8 +1235,12 @@ final class ChatViewModel: ObservableObject {
                 messages[idx].text = accumulated
             }
             history.append(.assistant(accumulated))
-            if speakResponses, !accumulated.isEmpty {
-                Task { await speak(accumulated) }
+            // Trimmed, not just non-empty: an answer that came back as a couple of
+            // newlines — or that was entirely reasoning, leaving the final channel
+            // blank — is not something to ask the Mac to speak.
+            let spoken = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+            if speakResponses, !spoken.isEmpty {
+                Task { await speak(spoken) }
             }
         } catch {
             messages[idx].text = "Error: \(error.localizedDescription)"
