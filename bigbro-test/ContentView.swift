@@ -1219,33 +1219,82 @@ final class ChatViewModel: ObservableObject {
 
         var accumulated = ""
         do {
-            let stream = client.chat(
+            if speakResponses {
+                accumulated = try await streamSpokenReply(at: idx)
+            } else {
+                let stream = client.chat(
+                    history,
+                    model: selectedModelID,
+                    streaming: streamingEnabled,
+                    tools: activatedTools,
+                    think: wantsReasoningTrace,
+                    reasoningEffort: reasoningEffort,
+                    onThinking: { [weak self] delta in
+                        Task { @MainActor in self?.messages[idx].thinking += delta }
+                    }
+                )
+                for try await delta in stream {
+                    accumulated += delta
+                    messages[idx].text = accumulated
+                }
+            }
+            history.append(.assistant(accumulated))
+        } catch {
+            messages[idx].text = "Error: \(error.localizedDescription)"
+        }
+        isLoading = false
+    }
+
+    /// Answers and speaks in one pass, a sentence at a time.
+    ///
+    /// `converse` hands each finished sentence to the Mac while the next is still being
+    /// generated, so the first word is spoken after one sentence rather than after the whole
+    /// answer. Speaking `accumulated` at the end instead — which is what this used to do —
+    /// meant waiting for generation *and then* synthesis before any sound at all.
+    ///
+    /// Audio is forwarded into the player as it arrives rather than collected first, so
+    /// playback starts on the first chunk.
+    private func streamSpokenReply(at idx: Int) async throws -> String {
+        let (audio, sink) = AsyncThrowingStream<Data, Error>.makeStream()
+        let playback = Task { try await speechPlayer.play(audio) }
+
+        var accumulated = ""
+        do {
+            for try await event in client.converse(
                 history,
                 model: selectedModelID,
-                streaming: streamingEnabled,
+                voice: voice,
                 tools: activatedTools,
                 think: wantsReasoningTrace,
                 reasoningEffort: reasoningEffort,
                 onThinking: { [weak self] delta in
                     Task { @MainActor in self?.messages[idx].thinking += delta }
                 }
-            )
-            for try await delta in stream {
-                accumulated += delta
-                messages[idx].text = accumulated
-            }
-            history.append(.assistant(accumulated))
-            // Trimmed, not just non-empty: an answer that came back as a couple of
-            // newlines — or that was entirely reasoning, leaving the final channel
-            // blank — is not something to ask the Mac to speak.
-            let spoken = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-            if speakResponses, !spoken.isEmpty {
-                Task { await speak(spoken) }
+            ) {
+                switch event {
+                case .text(let delta):
+                    accumulated += delta
+                    messages[idx].text = accumulated
+                case .audio(let data):
+                    sink.yield(data)
+                case .transcript:
+                    break   // only produced by the audio-in overload
+                }
             }
         } catch {
-            messages[idx].text = "Error: \(error.localizedDescription)"
+            sink.finish()
+            playback.cancel()
+            throw error
         }
-        isLoading = false
+
+        sink.finish()
+        do {
+            try await playback.value
+        } catch {
+            // The answer arrived; only the speaking of it failed.
+            voiceError = "Speak failed: \(error.localizedDescription)"
+        }
+        return accumulated
     }
 
     // MARK: - Hands-free voice mode
