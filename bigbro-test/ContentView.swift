@@ -340,6 +340,46 @@ private struct SpeechSection: View {
                 }
             }
 
+            Divider()
+
+            Text("Wake word")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            HStack {
+                TextField("Wake phrase", text: $viewModel.wakePhrase)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+
+            if !viewModel.wakeWordIsUsable {
+                Label("Too short to gate on — a phrase this brief matches too much ordinary speech.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            HStack {
+                Text("Follow-up window")
+                    .font(.subheadline)
+                Spacer()
+                Picker("Follow-up window", selection: $viewModel.followUpWindow) {
+                    Text("Off").tag(TimeInterval(0))
+                    Text("5s").tag(TimeInterval(5))
+                    Text("8s").tag(TimeInterval(8))
+                    Text("15s").tag(TimeInterval(15))
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+
+            Text("After answering, keeps taking questions for this long without the phrase. Off means every question needs it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
             Text("Uses the Mac's on-device text-to-speech and transcription — both start automatically on first use, the same way a language model does.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -704,19 +744,49 @@ private struct MicButton: View {
 /// Starts and stops the hands-free loop. Distinct from `MicButton`, which is push-to-talk
 /// dictation into the text field — this one runs the whole conversation without touching the
 /// phone again.
+///
+/// A menu rather than a plain toggle because there are two hands-free modes and the choice
+/// belongs at the moment of starting one: whether the assistant should answer everything it
+/// hears or only what is addressed to it depends on the room, not on a setting made earlier.
+/// Running, it is a single tap to end — the state it is in is not a choice.
 private struct VoiceModeButton: View {
     @ObservedObject var viewModel: ChatViewModel
     let canType: Bool
 
     var body: some View {
-        Button {
-            Task { await viewModel.toggleVoiceMode() }
-        } label: {
-            Image(systemName: viewModel.voiceActive ? "waveform.circle.fill" : "waveform.circle")
-                .font(.system(size: 22))
-                .foregroundStyle(viewModel.voiceActive ? .green : (canType ? .blue : .secondary))
+        Group {
+            if viewModel.voiceActive {
+                Button { viewModel.stopVoiceMode() } label: { icon }
+            } else {
+                Menu {
+                    Button {
+                        Task { await viewModel.startVoiceMode(wakeWord: false) }
+                    } label: {
+                        Label("Hands-free", systemImage: "waveform")
+                    }
+                    Button {
+                        Task { await viewModel.startVoiceMode(wakeWord: true) }
+                    } label: {
+                        Label("Wait for \"\(viewModel.wakePhrase)\"", systemImage: "ear.badge.waveform")
+                    }
+                    .disabled(!viewModel.wakeWordIsUsable)
+                } label: {
+                    icon
+                }
+                .disabled(!canType)
+            }
         }
-        .disabled(!canType && !viewModel.voiceActive)
+    }
+
+    private var icon: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22))
+            .foregroundStyle(viewModel.voiceActive ? .green : (canType ? .blue : .secondary))
+    }
+
+    private var symbol: String {
+        guard viewModel.voiceActive else { return "waveform.circle" }
+        return viewModel.voiceUsesWakeWord ? "ear.badge.waveform" : "waveform.circle.fill"
     }
 }
 
@@ -736,7 +806,10 @@ private struct VoiceStatusBar: View {
                 .font(.caption.bold())
                 .foregroundStyle(tint)
 
-            if viewModel.voicePhase == .listening {
+            // Shown while armed too. The microphone is open in both states, and a meter that
+            // vanishes when the assistant is merely waiting for its name reads as a
+            // microphone that has stopped working.
+            if viewModel.voicePhase == .listening || viewModel.voicePhase == .armed {
                 LevelMeter(level: viewModel.voiceLevel)
             }
 
@@ -755,7 +828,12 @@ private struct VoiceStatusBar: View {
         switch viewModel.voicePhase {
         case .idle:          return "Voice off"
         case .preparing:     return "Getting ready…"
-        case .listening:     return "Listening"
+        case .armed:         return "Say \"\(viewModel.wakePhrase)\""
+        // In wake-word mode this is the follow-up window, and saying so is the difference
+        // between the user knowing they can just talk and waiting for a prompt that is
+        // already over.
+        case .listening:     return viewModel.voiceUsesWakeWord ? "Listening — no need to say it again"
+                                                               : "Listening"
         case .transcribing:  return "Heard you…"
         case .thinking:      return "Thinking"
         case .speaking:      return "Speaking — talk to interrupt"
@@ -766,6 +844,7 @@ private struct VoiceStatusBar: View {
         switch viewModel.voicePhase {
         case .idle:         return "waveform.slash"
         case .preparing:    return "hourglass"
+        case .armed:        return "ear.badge.waveform"
         case .listening:    return "ear"
         case .transcribing: return "waveform"
         case .thinking:     return "brain"
@@ -778,6 +857,9 @@ private struct VoiceStatusBar: View {
         case .listening: return .green
         case .speaking:  return .blue
         case .idle:      return .secondary
+        // Not green: armed is the state where talking does nothing, and colouring it the
+        // same as "go ahead" is the one thing this bar exists to prevent.
+        case .armed:     return .secondary
         default:         return .orange
         }
     }
@@ -968,6 +1050,29 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var voiceActive = false
     @Published private(set) var voicePhase: BigBroVoiceSession.Phase = .idle
     @Published private(set) var voiceLevel: Float = 0
+    /// True when the running session is gated on the wake phrase, so the UI can say which of
+    /// the two hands-free modes is on without reaching into the session.
+    @Published private(set) var voiceUsesWakeWord = false
+
+    /// What the assistant answers to when hands-free is started in wake-word mode.
+    ///
+    /// Free text, because the whole point is that it is the user's name for it — but a phrase
+    /// too short to gate on is rejected by `WakeWord`, which `wakeWordIsUsable` reports so the
+    /// mode can be refused up front rather than silently answering nothing.
+    @Published var wakePhrase = "hey big bro" {
+        didSet {
+            guard wakePhrase != oldValue else { return }
+            // A running session picks the new phrase up on its next utterance.
+            voiceSession?.wakeWord = voiceUsesWakeWord ? wakeWord : nil
+        }
+    }
+    /// How long after an answer a follow-up can be asked without repeating the phrase.
+    @Published var followUpWindow: TimeInterval = 8 {
+        didSet { voiceSession?.followUpWindow = followUpWindow }
+    }
+
+    private var wakeWord: WakeWord { WakeWord(wakePhrase) }
+    var wakeWordIsUsable: Bool { !wakeWord.isEmpty }
     /// Index of the assistant bubble the current spoken turn is streaming into.
     private var voiceReplyID: UUID?
     private var voiceCancellables: Set<AnyCancellable> = []
@@ -1346,17 +1451,24 @@ final class ChatViewModel: ObservableObject {
 
     // MARK: - Hands-free voice mode
 
-    func toggleVoiceMode() async {
+    func toggleVoiceMode(wakeWord usesWakeWord: Bool = false) async {
         if voiceActive {
             stopVoiceMode()
         } else {
-            await startVoiceMode()
+            await startVoiceMode(wakeWord: usesWakeWord)
         }
     }
 
-    private func startVoiceMode() async {
+    func startVoiceMode(wakeWord usesWakeWord: Bool) async {
         guard client.isConnected else {
             voiceError = "Connect to a BigBro Mac first."
+            return
+        }
+        // Refused rather than started: gated on a phrase that can never match, the session
+        // would open the microphone, hear everything and answer none of it, which looks
+        // exactly like a broken connection.
+        guard !usesWakeWord || wakeWordIsUsable else {
+            voiceError = "\"\(wakePhrase)\" is too short to use as a wake word."
             return
         }
         voiceError = nil
@@ -1372,13 +1484,16 @@ final class ChatViewModel: ObservableObject {
             tools: activatedTools,
             voice: voice,
             reasoningEffort: reasoningEffort,
-            speaksReplies: speakResponses
+            speaksReplies: speakResponses,
+            wakeWord: usesWakeWord ? wakeWord : nil,
+            followUpWindow: followUpWindow
         )
         // Carry the typed conversation across, so switching to voice continues it rather
         // than starting over.
         session.setHistory(history)
         observe(session)
         voiceSession = session
+        voiceUsesWakeWord = usesWakeWord
         voiceActive = true
 
         await session.start()
@@ -1394,6 +1509,7 @@ final class ChatViewModel: ObservableObject {
         voiceCancellables.removeAll()
         voiceSession = nil
         voiceActive = false
+        voiceUsesWakeWord = false
         voicePhase = .idle
         voiceLevel = 0
         voiceReplyID = nil
@@ -1408,7 +1524,9 @@ final class ChatViewModel: ObservableObject {
                 guard let self else { return }
                 self.voicePhase = phase
                 // A finished turn releases the bubble, so the next one starts a fresh pair.
-                if phase == .listening { self.voiceReplyID = nil }
+                // Both resting phases count: with no follow-up window a turn goes straight
+                // back to `.armed` without passing through `.listening`.
+                if phase == .listening || phase == .armed { self.voiceReplyID = nil }
             }
             .store(in: &voiceCancellables)
 
