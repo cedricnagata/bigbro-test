@@ -1059,7 +1059,7 @@ final class ChatViewModel: ObservableObject {
     /// Free text, because the whole point is that it is the user's name for it — but a phrase
     /// too short to gate on is rejected by `WakeWord`, which `wakeWordIsUsable` reports so the
     /// mode can be refused up front rather than silently answering nothing.
-    @Published var wakePhrase = "hey big bro" {
+    @Published var wakePhrase = WakeWord.default.phrase {
         didSet {
             guard wakePhrase != oldValue else { return }
             // A running session picks the new phrase up on its next utterance.
