@@ -810,7 +810,7 @@ private struct VoiceStatusBar: View {
             // vanishes when the assistant is merely waiting for its name reads as a
             // microphone that has stopped working.
             if viewModel.voicePhase == .listening || viewModel.voicePhase == .armed {
-                LevelMeter(level: viewModel.voiceLevel)
+                LevelMeter(level: viewModel.voiceLevel, threshold: viewModel.voiceThreshold)
             }
 
             Spacer()
@@ -865,21 +865,34 @@ private struct VoiceStatusBar: View {
     }
 }
 
+/// Input level, with the bar it has to clear marked on it.
+///
+/// The threshold tick is what makes "it isn't hearing me" answerable: a meter that never
+/// moves means the microphone is delivering nothing, and one that moves but stays under the
+/// tick means it is delivering plenty and the threshold has drifted above it. Those want
+/// opposite fixes and look identical without the tick.
 private struct LevelMeter: View {
     let level: Float
+    let threshold: Float
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.2))
                 Capsule()
-                    .fill(Color.green)
-                    .frame(width: geo.size.width * CGFloat(max(0, min(1, level))))
+                    .fill(level > threshold ? Color.green : Color.secondary)
+                    .frame(width: geo.size.width * CGFloat(clamped(level)))
+                Rectangle()
+                    .fill(Color.primary.opacity(0.5))
+                    .frame(width: 1)
+                    .offset(x: geo.size.width * CGFloat(clamped(threshold)))
             }
         }
         .frame(width: 60, height: 4)
         .animation(.linear(duration: 0.05), value: level)
     }
+
+    private func clamped(_ value: Float) -> Float { max(0, min(1, value)) }
 }
 
 private struct ModelDownloadBanner: View {
@@ -1050,6 +1063,8 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var voiceActive = false
     @Published private(set) var voicePhase: BigBroVoiceSession.Phase = .idle
     @Published private(set) var voiceLevel: Float = 0
+    /// The level speech has to clear, drawn on the meter next to it.
+    @Published private(set) var voiceThreshold: Float = 0
     /// True when the running session is gated on the wake phrase, so the UI can say which of
     /// the two hands-free modes is on without reaching into the session.
     @Published private(set) var voiceUsesWakeWord = false
@@ -1512,6 +1527,7 @@ final class ChatViewModel: ObservableObject {
         voiceUsesWakeWord = false
         voicePhase = .idle
         voiceLevel = 0
+        voiceThreshold = 0
         voiceReplyID = nil
     }
 
@@ -1533,6 +1549,11 @@ final class ChatViewModel: ObservableObject {
         session.$level
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.voiceLevel = $0 }
+            .store(in: &voiceCancellables)
+
+        session.$threshold
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.voiceThreshold = $0 }
             .store(in: &voiceCancellables)
 
         session.$transcript
