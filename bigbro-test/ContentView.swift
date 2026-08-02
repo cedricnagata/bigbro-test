@@ -1306,6 +1306,9 @@ final class ChatViewModel: ObservableObject {
                 tools: activatedTools,
                 think: wantsReasoningTrace,
                 reasoningEffort: reasoningEffort,
+                // Off means one response, for the speech as much as the text: the whole
+                // answer appears at once and is spoken as a single utterance.
+                streaming: streamingEnabled,
                 onThinking: { [weak self] delta in
                     Task { @MainActor in self?.update(replyID) { $0.thinking += delta } }
                 }
