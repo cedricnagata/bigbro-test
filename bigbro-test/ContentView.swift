@@ -734,9 +734,14 @@ private struct MicButton: View {
                     .foregroundStyle(isStopping ? .red : (canType ? .blue : .secondary))
             }
         }
+        // Hands-free already owns the microphone and the audio session. Recording over it
+        // would reset the category out from under a running session, taking its echo
+        // cancellation with it, and open a second recorder on an input it has already
+        // tapped. End it first — the status bar has the button for that.
         .disabled(
             (!canType && !viewModel.isRecording && !viewModel.isSpeaking)
             || viewModel.isTranscribing
+            || viewModel.voiceActive
         )
     }
 }
@@ -1312,7 +1317,7 @@ final class ChatViewModel: ObservableObject {
         cancelStartModel()
         stopVoiceMode()
         client.disconnect()
-        speechPlayer.stop()
+        speechPlayer.shutdown()   // nothing left to speak; give the route back
         history = []
         messages = []
         state = .idle
@@ -1487,7 +1492,12 @@ final class ChatViewModel: ObservableObject {
             return
         }
         voiceError = nil
-        speechPlayer.stop()   // the session has its own player; don't let two share the route
+        // `shutdown`, not `stop`: stopping ends the utterance but deliberately leaves the
+        // engine running so the next one starts without restart latency. That engine holds
+        // `.playback`, and the session is about to raise its own with voice processing on —
+        // two engines, which is the arrangement that leaves voice processing with no echo
+        // reference and playback quiet. Only one engine may be up at a time.
+        speechPlayer.shutdown()
 
         // Sent as configured rather than pre-filtered against `selectedModel`. The Mac is the
         // authority on what a model can do and reports what it dropped, so sending and being
@@ -1622,6 +1632,10 @@ final class ChatViewModel: ObservableObject {
             voiceError = "Microphone permission denied."
             return
         }
+        // Same rule as starting hands-free: whoever takes the route over gets it to itself.
+        // A player engine left running on `.playback` while the recorder opens the input is
+        // two owners of one route, and the category change would knock it over anyway.
+        speechPlayer.shutdown()
 
         do {
             let session = AVAudioSession.sharedInstance()
