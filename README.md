@@ -1,6 +1,8 @@
 # BigBroTest
 
-A demo iOS app that exercises the full [BigBroKit](https://github.com/nagata-inc/bigbro-kit) feature set. Connects to a BigBro Mac on the local network and provides a chat interface backed by the Mac's local Ollama models.
+A demo iOS app that exercises the full [BigBroKit](https://github.com/nagata-inc/bigbro-kit) feature
+set. Connects to a BigBro Mac on the local network and provides a chat interface backed by models
+the Mac runs in-process through Apple's MLX.
 
 This app is not intended for distribution — use BigBroKit directly in your own app.
 
@@ -8,26 +10,50 @@ This app is not intended for distribution — use BigBroKit directly in your own
 
 - iOS 17.0+
 - Xcode 15+
-- A Mac running the [BigBro](https://github.com/nagata-inc/bigbro) app on the same local network
-- At least one LLM model installed in [Ollama](https://ollama.ai) on that Mac
+- A Mac on the same local network running the [BigBro](https://github.com/nagata-inc/bigbro) daemon
+  (`bigbro serve`)
+- At least one language model downloaded and started on that Mac (`bigbro models download
+  gpt-oss-20b`, then `bigbro models start gpt-oss-20b`, or the Models tab of its dashboard)
+
+Voice features additionally need the Mac's speech models — Kokoro for synthesis, Parakeet for
+transcription. Both start on first use, so nothing has to be done in advance; the first spoken
+turn is just slower.
 
 ## Setup
 
 1. Open `bigbro-test.xcodeproj` in Xcode
-2. Ensure the BigBroKit local package is linked under **Frameworks, Libraries, and Embedded Content**
-3. Configure the required models and app name at the top of `ContentView.swift`:
+2. Select a simulator or device and build
 
-```swift
-private let requiredModels: [String] = [
-    "llama3.2",
-    "llava:13b",
-]
+The app consumes BigBroKit from the **remote `main` branch**, not a local checkout. To pick up a
+new kit commit, delete both:
+
+```
+bigbro-test.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+~/Library/Developer/Xcode/DerivedData/bigbro-test-*/SourcePackages
 ```
 
-4. Select a physical device or simulator as the run destination and build
+Without clearing both, Xcode keeps resolving the version it already has.
+
+Model and voice lists are hand-kept mirrors of the Mac's catalog, at the top of
+`ContentView.swift`:
+
+```swift
+private let availableModels: [TestModel] = [
+    TestModel(id: "gpt-oss-20b", displayName: "gpt-oss 20B", supportsTools: true,
+              reasoningOptions: .effortLevels),
+    // ...
+]
+
+private let requiredModels: [String] = ["gpt-oss-20b"]
+```
+
+`requiredModels` is deliberately shorter than `availableModels` — declaring them all would have
+the Mac warn about every model you had not downloaded. Speech models are absent from both
+because they are not selectable by name; the app asks for "speech" as a whole and the Mac
+manages them.
 
 Privacy configuration is already in place, split across two locations because the target uses
-`GENERATE_INFOPLIST_FILE = YES`:
+`GENERATE_INFOPLIST_FILE = YES`.
 
 `Info.plist` holds the Bonjour service list:
 ```xml
@@ -40,14 +66,16 @@ Privacy configuration is already in place, split across two locations because th
 The usage descriptions are build settings (`INFOPLIST_KEY_*`), merged in at build time:
 
 - `NSLocalNetworkUsageDescription` — Bonjour discovery and the TCP connection
-- `NSMicrophoneUsageDescription` — recording for voice input in chat
+- `NSMicrophoneUsageDescription` — recording and hands-free voice
 
 ## Layout
 
 Two-panel split view:
 
-- **Left panel (280pt)** — connection status, missing model warnings, model picker, streaming toggle, per-tool toggles, speak-responses toggle, clear chat
-- **Right panel** — scrollable message history, pending image previews, input bar with mic button
+- **Left panel (280pt)** — connection status, missing-model warnings, model picker, streaming
+  toggle, reasoning controls, per-tool toggles, speech settings, clear chat
+- **Right panel** — message history, pending image previews, the voice status bar while
+  hands-free is running, and the input bar
 
 ## Connection flow
 
@@ -55,53 +83,80 @@ Two-panel split view:
 Idle → Find BigBro → Discovering… → Select Mac → Waiting for approval… → Chat
 ```
 
-On first connect, an approval dialog appears on the Mac. Subsequent reconnects from the same device and app are auto-approved silently. If the connection drops, the app returns to Idle automatically.
+On first connect the Mac raises an approval prompt in its dashboard. Later reconnects from the
+same device auto-approve silently — the Mac holds all pairing state, and the app persists none.
+If the connection drops, the app returns to Idle.
 
-Connection state is visible in the left panel:
 - Green dot — connected
 - Spinner — reconnecting (path degraded, waiting for recovery)
 - Grey dot — disconnected
 
-If any required models are missing from Ollama, a warning banner appears in the connection section listing the missing models. The banner updates automatically when models are downloaded — no reconnect needed.
+If a required model is missing, a banner lists it and updates as models are downloaded, with no
+reconnect needed. The Mac is also the authority on what a model can do, and reports what it
+dropped — those notes appear under the transcript.
 
 ## Features demonstrated
 
-### Model selection
+### Model selection and reasoning
 
-A picker in the left panel lets you choose which model to use for the current chat session. Options are the models declared in `requiredModels` plus a **BigBro Default** option that defers to whatever the Mac's default model is set to.
+A picker chooses the model for the session. Reasoning controls adapt to what the model supports:
+effort levels for gpt-oss, an on/off toggle for Qwen3, and nothing at all for models without it.
 
 ### Streaming vs single response
 
-Toggle in the left panel. In streaming mode, text tokens appear as they are generated. In single-response mode, the complete reply arrives at once.
+In streaming mode text appears token by token, and a spoken reply is spoken sentence by
+sentence as it generates. Turned off, the whole answer arrives at once and is spoken as a single
+utterance — the toggle governs speech and text together.
+
+Hands-free always streams regardless: the toggle is a chat setting, and waiting for an entire
+answer before speaking would make a conversation unusable.
 
 ### Image attachment
 
-Tap the photo button in the input bar to open the system photo picker. Selected images appear as thumbnails above the input field and are sent with the next message. Multimodal models (e.g. `llava`) can see and describe the images.
-
-Images are JPEG-compressed and base64-encoded before being included in the Ollama request.
+The photo button opens the system picker. Images are JPEG-compressed and base64-encoded on the
+wire. Requires a vision model on the Mac.
 
 ### Tools
 
-Each tool can be toggled individually in the left panel. The SDK's agentic loop handles tool execution transparently — the chat UI only ever sees the final text response.
+Toggled individually in the left panel. The SDK's agentic loop runs tool calls on the device, so
+the chat UI only ever sees the final text.
 
 | Tool | Description |
 |---|---|
-| `get_current_date` | Returns the current date and time from the device clock |
-| `get_device_info` | Returns the device name, model, and OS version |
+| `get_current_date` | Current date and time from the device clock |
+| `get_device_info` | Device name, model, and OS version |
 
-### Voice input (speech to text)
+### Three ways to talk to it
 
-The mic button in the input bar records a full utterance with `AVAudioRecorder`, then sends it
-to `client.transcribe(audio, format: "m4a")`. The transcript is appended to the message box (not
-auto-sent) so you can review or edit it first. Disabled while not connected; requires a speech
-backend enabled on the Mac (Settings → Speech) or transcription fails with an inline error.
+**Record a message** — the mic button records one utterance with `AVAudioRecorder` and sends it
+to `client.transcribe`. The transcript lands in the message box rather than being sent, so it can
+be edited first. Disabled while a hands-free session is running, which already owns the
+microphone.
 
-### Speak responses (text to speech)
+**Hands-free** — the waveform button opens a menu; the first entry runs `BigBroVoiceSession`
+continuously. Talk, and it transcribes, answers, and speaks back without touching the phone.
+Talking over an answer interrupts it.
 
-**Speak responses**, in the left panel, plays each assistant reply through the Mac's TTS
-backend once the full response has arrived — `client.speak(text)` streamed through
-`BigBroAudioPlayer`, so audio starts on the first chunk rather than after the whole utterance.
-Sending a new message stops any response still being spoken.
+**Hands-free with a wake word** — the second menu entry gates the same loop on a phrase, so it
+can sit in a room where other conversations are happening. Both shapes of address work: "hey big
+bro, what's the weather" is answered immediately, while "hey big bro" alone opens the microphone
+for whatever comes next. After answering, follow-ups need no phrase for a few seconds.
+
+The status bar distinguishes the two resting states — **Say "hey big bro"** when armed versus
+**Listening** inside the follow-up window — because they are the difference between it being your
+turn and not. The level meter marks the threshold speech has to clear, which is what separates a
+microphone hearing nothing from a threshold sitting above one hearing plenty.
+
+### Speech settings
+
+- **Speak responses** — speaks assistant replies, sentence by sentence as they generate rather
+  than after the whole answer, so the first word arrives about a sentence in. Can be toggled
+  mid-conversation, including mid-answer.
+- **Voice** — Kokoro voice id, chosen from a closed list because an unrecognized one just fails
+  synthesis on the Mac with no useful error.
+- **Wake phrase** — free text. A phrase too short to gate on is refused rather than silently
+  matching nothing.
+- **Follow-up window** — how long after an answer a question needs no wake phrase.
 
 ## Source
 

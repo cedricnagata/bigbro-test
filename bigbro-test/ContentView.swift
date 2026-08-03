@@ -54,12 +54,12 @@ private let requiredModels: [String] = [
     "gpt-oss-20b"
 ]
 
-/// Kokoro voice identifiers the Mac's speech backend (FluidAudio) ships, mirrored from
-/// `TtsConstants.availableVoices` — bigbro-test has no dependency on FluidAudio itself (that's
-/// Mac-only), so this is a hand-kept copy, same discipline as `availableModels` above.
+/// Kokoro voice identifiers the Mac's speech backend ships. The Mac runs Kokoro through
+/// mlx-audio and this app has no dependency on it, so this is a hand-kept copy, same
+/// discipline as `availableModels` above.
 ///
 /// Only American English (`af_*`, `am_*`) is regression-tested; the rest are present in the
-/// model and work, but are unverified per FluidAudio's own docs.
+/// model and work, but are unverified.
 private let availableVoices: [String] = [
     // American English (tested)
     "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore", "af_nicole", "af_nova",
@@ -508,7 +508,7 @@ private struct ConnectionSection: View {
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
-                        Text("Download in Ollama to use these models.")
+                        Text("Download these on the Mac to use them.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
