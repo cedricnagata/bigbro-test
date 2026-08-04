@@ -360,21 +360,7 @@ private struct SpeechSection: View {
                     .foregroundStyle(.orange)
             }
 
-            HStack {
-                Text("Follow-up window")
-                    .font(.subheadline)
-                Spacer()
-                Picker("Follow-up window", selection: $viewModel.followUpWindow) {
-                    Text("Off").tag(TimeInterval(0))
-                    Text("5s").tag(TimeInterval(5))
-                    Text("8s").tag(TimeInterval(8))
-                    Text("15s").tag(TimeInterval(15))
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-            }
-
-            Text("After answering, keeps taking questions for this long without the phrase. Off means every question needs it.")
+            Text("Every question needs the phrase, including the one after an answer — the session re-arms as soon as it stops speaking, and nothing but the phrase interrupts it.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -834,14 +820,15 @@ private struct VoiceStatusBar: View {
         case .idle:          return "Voice off"
         case .preparing:     return "Getting ready…"
         case .armed:         return "Say \"\(viewModel.wakePhrase)\""
-        // In wake-word mode this is the follow-up window, and saying so is the difference
-        // between the user knowing they can just talk and waiting for a prompt that is
-        // already over.
-        case .listening:     return viewModel.voiceUsesWakeWord ? "Listening — no need to say it again"
-                                                               : "Listening"
+        // In wake-word mode this is only ever reached by being named and asked nothing, and
+        // it lapses. Saying so is the difference between the user going ahead and waiting for
+        // a prompt that is already over.
+        case .listening:     return viewModel.voiceUsesWakeWord ? "Go ahead…" : "Listening"
         case .transcribing:  return "Heard you…"
         case .thinking:      return "Thinking"
-        case .speaking:      return "Speaking — talk to interrupt"
+        case .speaking:      return viewModel.voiceUsesWakeWord
+                                 ? "Speaking — say \"\(viewModel.wakePhrase)\" to interrupt"
+                                 : "Speaking — talk to interrupt"
         }
     }
 
@@ -1086,11 +1073,6 @@ final class ChatViewModel: ObservableObject {
             voiceSession?.wakeWord = voiceUsesWakeWord ? wakeWord : nil
         }
     }
-    /// How long after an answer a follow-up can be asked without repeating the phrase.
-    @Published var followUpWindow: TimeInterval = 8 {
-        didSet { voiceSession?.followUpWindow = followUpWindow }
-    }
-
     private var wakeWord: WakeWord { WakeWord(wakePhrase) }
     var wakeWordIsUsable: Bool { !wakeWord.isEmpty }
     /// Index of the assistant bubble the current spoken turn is streaming into.
@@ -1510,8 +1492,7 @@ final class ChatViewModel: ObservableObject {
             voice: voice,
             reasoningEffort: reasoningEffort,
             speaksReplies: speakResponses,
-            wakeWord: usesWakeWord ? wakeWord : nil,
-            followUpWindow: followUpWindow
+            wakeWord: usesWakeWord ? wakeWord : nil
         )
         // Carry the typed conversation across, so switching to voice continues it rather
         // than starting over.
@@ -1550,8 +1531,8 @@ final class ChatViewModel: ObservableObject {
                 guard let self else { return }
                 self.voicePhase = phase
                 // A finished turn releases the bubble, so the next one starts a fresh pair.
-                // Both resting phases count: with no follow-up window a turn goes straight
-                // back to `.armed` without passing through `.listening`.
+                // Both resting phases count: in wake-word mode a turn goes straight back to
+                // `.armed` without passing through `.listening`.
                 if phase == .listening || phase == .armed { self.voiceReplyID = nil }
             }
             .store(in: &voiceCancellables)

@@ -140,12 +140,17 @@ Talking over an answer interrupts it.
 **Hands-free with a wake word** — the second menu entry gates the same loop on a phrase, so it
 can sit in a room where other conversations are happening. Both shapes of address work: "hey big
 bro, what's the weather" is answered immediately, while "hey big bro" alone opens the microphone
-for whatever comes next. After answering, follow-ups need no phrase for a few seconds.
+for whatever comes next.
+
+The phrase is the only way in. Every question needs it, including the one after an answer, and
+it is also the only thing that interrupts — talking over a reply does nothing unless you name
+it first, which is the point of running this mode in a room that contains other conversations.
 
 The status bar distinguishes the two resting states — **Say "hey big bro"** when armed versus
-**Listening** inside the follow-up window — because they are the difference between it being your
-turn and not. The level meter marks the threshold speech has to clear, which is what separates a
-microphone hearing nothing from a threshold sitting above one hearing plenty.
+**Go ahead…** in the brief window after being named and asked nothing — because they are the
+difference between it being your turn and not. The level meter marks the threshold speech has
+to clear, which is what separates a microphone hearing nothing from a threshold sitting above
+one hearing plenty.
 
 ### Speech settings
 
@@ -156,7 +161,6 @@ microphone hearing nothing from a threshold sitting above one hearing plenty.
   synthesis on the Mac with no useful error.
 - **Wake phrase** — free text. A phrase too short to gate on is refused rather than silently
   matching nothing.
-- **Follow-up window** — how long after an answer a question needs no wake phrase.
 
 ## Source
 
