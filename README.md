@@ -1,6 +1,6 @@
 # BigBroTest
 
-A demo iOS app that exercises the full [BigBroKit](https://github.com/nagata-inc/bigbro-kit) feature
+A demo iOS app that exercises the full [BigBroKit](https://github.com/cedricnagata/bigbro-kit) feature
 set. Connects to a BigBro Mac on the local network and provides a chat interface backed by models
 the Mac runs in-process through Apple's MLX.
 
@@ -10,7 +10,7 @@ This app is not intended for distribution — use BigBroKit directly in your own
 
 - iOS 17.0+
 - Xcode 15+
-- A Mac on the same local network running the [BigBro](https://github.com/nagata-inc/bigbro) daemon
+- A Mac on the same local network running the [BigBro](https://github.com/cedricnagata/bigbro) daemon
   (`bigbro serve`)
 - At least one language model downloaded and started on that Mac (`bigbro models download
   gpt-oss-20b`, then `bigbro models start gpt-oss-20b`, or the Models tab of its dashboard)
@@ -73,7 +73,8 @@ The usage descriptions are build settings (`INFOPLIST_KEY_*`), merged in at buil
 Two-panel split view:
 
 - **Left panel (280pt)** — connection status, missing-model warnings, model picker, streaming
-  toggle, reasoning controls, per-tool toggles, speech settings, clear chat
+  toggle, reasoning controls, per-tool toggles, speech settings, auto-reconnect and remembered
+  Macs, clear chat
 - **Right panel** — message history, pending image previews, the voice status bar while
   hands-free is running, and the input bar
 
@@ -84,8 +85,18 @@ Idle → Find BigBro → Discovering… → Select Mac → Waiting for approval�
 ```
 
 On first connect the Mac raises an approval prompt in its dashboard. Later reconnects from the
-same device auto-approve silently — the Mac holds all pairing state, and the app persists none.
-If the connection drops, the app returns to Idle.
+same device auto-approve silently — the Mac holds all pairing state. If the connection drops, the
+app returns to Idle.
+
+The left panel also exposes the kit's auto-reconnect switch, with a count of remembered Macs and a
+button to forget them. With it on, the app pairs with a known Mac as soon as Bonjour sees it,
+without going through Find BigBro. That list lives in the app's `UserDefaults` and is only a record
+of which Macs are worth reconnecting to — forgetting them here revokes nothing on the Mac, which
+still decides every approval. `bigbro pair remove` on the Mac is what actually revokes.
+
+Because the switch is persistent but the browse it starts is not, the app calls
+`resumeAutoReconnectIfEnabled()` at launch. Without that the toggle would read as on while nothing
+was looking for anything.
 
 - Green dot — connected
 - Spinner — reconnecting (path degraded, waiting for recovery)
