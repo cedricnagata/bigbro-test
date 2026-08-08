@@ -218,6 +218,14 @@ private struct SettingsPanel: View {
                     Text("\(viewModel.selectedModel.displayName) can't call tools. The Mac drops them rather than failing, so requests still answer — just without them.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                } else {
+                    Stepper(value: $viewModel.maxToolRounds, in: 1...16) {
+                        Text("Max tool rounds: \(viewModel.maxToolRounds)")
+                            .font(.subheadline)
+                    }
+                    Text("How many times the model may run tools and come back before the turn fails. Lower it to see the limit fire.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -969,6 +977,21 @@ private struct MessageBubble: View {
                     .background(Color(.systemGray6))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                if !message.toolCalls.isEmpty {
+                    // One row per call, not a deduplicated set: the point of showing these is
+                    // to see that a turn asking for two tools ran two.
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(message.toolCalls.indices, id: \.self) { i in
+                            Label(message.toolCalls[i], systemImage: "wrench.and.screwdriver")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
                 // Skipped while reasoning streams with no final text yet — the thinking
                 // disclosure above already signals activity, so a bare "…" bubble under it
                 // would be redundant.
@@ -1018,6 +1041,13 @@ final class ChatViewModel: ObservableObject {
     /// True while the Mac is materializing the model's weights ahead of the first message.
     @Published private(set) var isStartingModel = false
     @Published var enabledTools: Set<String> = []
+    /// Passed straight through to BigBroKit's tool loop. Exposed because the interesting case
+    /// is the one you can't provoke on purpose otherwise: drop it to 1 and a model that wants
+    /// a second round fails with `toolLoopLimit` instead of looping unbounded.
+    @Published var maxToolRounds: Int = 8
+    /// The reply currently being generated, so a tool handler firing mid-turn knows which
+    /// message to record itself on.
+    private var activeReplyID: UUID?
     @Published var selectedImages: [UIImage] = []
     @Published var imagePickerItems: [PhotosPickerItem] = []
 
@@ -1118,8 +1148,38 @@ final class ChatViewModel: ObservableObject {
         ChatViewModel.deviceInfoTool,
     ]
 
+    /// The enabled tools, each wrapped so the app records that it ran.
+    ///
+    /// BigBroKit runs the tool loop internally and yields only text, so the handler firing is
+    /// the one moment the app can observe a call. Worth showing: a turn that asks for two
+    /// tools should list two, and used to list one — the client kept only the last `toolCall`
+    /// message of the turn, so every call but the final one was dropped unexecuted.
     var activatedTools: [BigBroTool] {
-        allTools.filter { enabledTools.contains($0.definition.function.name) }
+        allTools
+            .filter { enabledTools.contains($0.definition.function.name) }
+            .map { tool in
+                let name = tool.definition.function.name
+                let handler = tool.handler
+                return BigBroTool(definition: tool.definition) { [weak self] args in
+                    let result = await handler(args)
+                    // Rendered here, not passed across the hop: `[String: Any]` is not
+                    // Sendable, and only the label is wanted on the other side.
+                    let rendered = args.isEmpty
+                        ? name
+                        : "\(name)(\(args.keys.sorted().joined(separator: ", ")))"
+                    await MainActor.run { self?.recordToolCall(rendered) }
+                    return result
+                }
+            }
+    }
+
+    /// Appends a fired tool to the reply being generated. No-op once the turn is over, which
+    /// is what a tool that returns after cancellation should do.
+    private func recordToolCall(_ rendered: String) {
+        // Voice turns own their bubble through `voiceReplyID`; typed ones through
+        // `activeReplyID`. Tools fire the same way in both.
+        guard let replyID = activeReplyID ?? voiceReplyID else { return }
+        update(replyID) { $0.toolCalls.append(rendered) }
     }
 
     @Published var selectedModelID: String = availableModels[0].id {
@@ -1360,6 +1420,8 @@ final class ChatViewModel: ObservableObject {
         let placeholder = ChatMessage(role: "assistant", text: "", model: client.connectedDevice?.name ?? "")
         messages.append(placeholder)
         let replyID = placeholder.id
+        activeReplyID = replyID
+        defer { activeReplyID = nil }
 
         var accumulated = ""
         do {
@@ -1373,6 +1435,7 @@ final class ChatViewModel: ObservableObject {
                     tools: activatedTools,
                     think: wantsReasoningTrace,
                     reasoningEffort: reasoningEffort,
+                    maxToolRounds: maxToolRounds,
                     onThinking: { [weak self] delta in
                         Task { @MainActor in self?.update(replyID) { $0.thinking += delta } }
                     }
@@ -1416,6 +1479,7 @@ final class ChatViewModel: ObservableObject {
                 // Off means one response, for the speech as much as the text: the whole
                 // answer appears at once and is spoken as a single utterance.
                 streaming: streamingEnabled,
+                maxToolRounds: maxToolRounds,
                 onThinking: { [weak self] delta in
                     Task { @MainActor in self?.update(replyID) { $0.thinking += delta } }
                 }
@@ -1709,13 +1773,16 @@ struct ChatMessage: Identifiable {
     var model: String
     var images: [UIImage]
     var thinking: String
+    /// Tools that actually ran for this reply, in the order their handlers returned.
+    var toolCalls: [String]
 
-    init(role: String, text: String, model: String = "", images: [UIImage] = [], thinking: String = "") {
+    init(role: String, text: String, model: String = "", images: [UIImage] = [], thinking: String = "", toolCalls: [String] = []) {
         self.role = role
         self.text = text
         self.model = model
         self.images = images
         self.thinking = thinking
+        self.toolCalls = toolCalls
     }
 }
 
