@@ -1594,9 +1594,11 @@ final class ChatViewModel: ObservableObject {
             .sink { [weak self] phase in
                 guard let self else { return }
                 self.voicePhase = phase
-                // A finished turn releases the bubble, so the next one starts a fresh pair.
-                // Both resting phases count: in wake-word mode a turn goes straight back to
-                // `.armed` without passing through `.listening`.
+                // A finished turn releases the bubble. Not what starts the next pair — the
+                // transcript does that — but it stops a tool that returns after the turn
+                // ended from appending to a reply nobody is waiting on. Both resting phases
+                // count: in wake-word mode a turn goes straight back to `.armed` without
+                // passing through `.listening`.
                 if phase == .listening || phase == .armed { self.voiceReplyID = nil }
             }
             .store(in: &voiceCancellables)
@@ -1611,17 +1613,23 @@ final class ChatViewModel: ObservableObject {
             .sink { [weak self] in self?.voiceThreshold = $0 }
             .store(in: &voiceCancellables)
 
-        session.$transcript
+        // One pair of bubbles per turn, keyed on the turn's own identity rather than inferred
+        // from anything else. `removeDuplicates` is safe here and was not on `$transcript`:
+        // saying the same thing twice is two turns with two ids, and only a re-emission of one
+        // turn compares equal.
+        //
+        // Identity is what makes barge-in work. Cutting an answer off and asking something else
+        // runs .speaking → .transcribing → .thinking with no resting phase in between, so the
+        // old gate — wait for the phase to rest, then open the next pair — never opened one for
+        // the interrupting question and let its answer overwrite the previous reply in the
+        // previous bubble.
+        session.$turn
             .receive(on: DispatchQueue.main)
-            .filter { !$0.isEmpty }
-            .sink { [weak self] heard in
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] turn in
                 guard let self else { return }
-                // One bubble per turn, gated on not already having one rather than on the
-                // text being new. `removeDuplicates` looked equivalent and was not: saying
-                // the same thing twice, or repeating yourself after clearing the chat,
-                // suppressed the second turn entirely — no question, no answer.
-                guard self.voiceReplyID == nil else { return }
-                self.messages.append(ChatMessage(role: "user", text: heard))
+                self.messages.append(ChatMessage(role: "user", text: turn.question))
                 let placeholder = ChatMessage(
                     role: "assistant", text: "",
                     model: self.client.connectedDevice?.name ?? ""
