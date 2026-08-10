@@ -21,5 +21,13 @@ xcuserdata/
 .swiftpm/
 *.resolved
 
+# Signing material. Never committed — these are the private halves of the
+# distribution identity and the App Store Connect key, and they reach CI as
+# repository secrets instead.
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+
 # macOS
 .DS_Store
