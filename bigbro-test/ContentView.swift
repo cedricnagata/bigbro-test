@@ -16,6 +16,10 @@ enum ReasoningOptions: Hashable {
     case toggleOnly
     /// Always reasons; only how much is adjustable (gpt-oss's low/medium/high).
     case effortLevels
+    /// Always reasons, with nothing to adjust — the DeepSeek-R1 distills, whose template
+    /// takes neither `enable_thinking` nor `reasoning_effort`. Distinct from `.effortLevels`
+    /// because offering a depth the Mac would only drop is a control that lies.
+    case alwaysOn
 }
 
 /// A text model this app can ask the Mac to run, and what it can do.
@@ -28,24 +32,62 @@ struct TestModel: Identifiable, Hashable {
     let id: String
     let displayName: String
     let supportsTools: Bool
+    /// Whether the Mac will accept a request carrying images for this model. A language model
+    /// has no vision tower, and the Mac errors rather than answering from the text alone — so
+    /// this greys out the photo picker instead of letting a send fail.
+    let supportsImages: Bool
     let reasoningOptions: ReasoningOptions
+
+    init(
+        id: String,
+        displayName: String,
+        supportsTools: Bool,
+        supportsImages: Bool = false,
+        reasoningOptions: ReasoningOptions
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.supportsTools = supportsTools
+        self.supportsImages = supportsImages
+        self.reasoningOptions = reasoningOptions
+    }
 }
 
+/// Every model BigBro's own catalog offers for a `request` — its `ALL_MODELS`, in the same
+/// order. Deliberately the whole list rather than a chosen few: this app exists to exercise
+/// the Mac, and a model that can't be picked here is a model whose framing, tool support and
+/// reasoning style go untested.
+///
+/// Speech is absent because it isn't selectable by name — the Mac fills the TTS and STT roles
+/// itself and this app only ever asks for "speech".
 private let availableModels: [TestModel] = [
-    TestModel(id: "gpt-oss-20b",  displayName: "gpt-oss 20B",  supportsTools: true,  reasoningOptions: .effortLevels),
-    TestModel(id: "qwen3-8b",     displayName: "Qwen3 8B",     supportsTools: true,  reasoningOptions: .toggleOnly),
-    TestModel(id: "qwen3-4b",     displayName: "Qwen3 4B",     supportsTools: true,  reasoningOptions: .toggleOnly),
-    TestModel(id: "llama-3.1-8b", displayName: "Llama 3.1 8B", supportsTools: true,  reasoningOptions: .none),
-    TestModel(id: "llama-3.2-3b", displayName: "Llama 3.2 3B", supportsTools: true,  reasoningOptions: .none),
-    TestModel(id: "gemma-4-e2b",  displayName: "Gemma 4 E2B",  supportsTools: false, reasoningOptions: .none),
-    TestModel(id: "gemma-3-1b",   displayName: "Gemma 3 1B",   supportsTools: false, reasoningOptions: .none),
+    // Text
+    TestModel(id: "gpt-oss-20b",        displayName: "gpt-oss 20B",           supportsTools: true,  reasoningOptions: .effortLevels),
+    TestModel(id: "qwen3.6-35b-a3b",    displayName: "Qwen3.6 35B A3B",       supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "bonsai-27b-ternary", displayName: "Bonsai 27B Ternary",    supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "qwen3-8b",           displayName: "Qwen3 8B",              supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "qwen3-4b",           displayName: "Qwen3 4B",              supportsTools: true,  reasoningOptions: .toggleOnly),
+    TestModel(id: "llama-3.1-8b",       displayName: "Llama 3.1 8B",          supportsTools: true,  reasoningOptions: .none),
+    TestModel(id: "llama-3.2-3b",       displayName: "Llama 3.2 3B",          supportsTools: true,  reasoningOptions: .none),
+    TestModel(id: "llama-3.2-1b",       displayName: "Llama 3.2 1B",          supportsTools: true,  reasoningOptions: .none),
+    TestModel(id: "gemma-4-e4b",        displayName: "Gemma 4 E4B",           supportsTools: false, reasoningOptions: .none),
+    TestModel(id: "gemma-4-e2b",        displayName: "Gemma 4 E2B",           supportsTools: false, reasoningOptions: .none),
+    TestModel(id: "gemma-3-1b",         displayName: "Gemma 3 1B",            supportsTools: false, reasoningOptions: .none),
+    TestModel(id: "phi-3.5-mini",       displayName: "Phi 3.5 Mini",          supportsTools: false, reasoningOptions: .none),
+    TestModel(id: "deepseek-r1-7b",     displayName: "DeepSeek-R1 Distill 7B", supportsTools: false, reasoningOptions: .alwaysOn),
+    // Vision
+    TestModel(id: "qwen2.5-vl-3b",      displayName: "Qwen2.5-VL 3B",         supportsTools: false, supportsImages: true, reasoningOptions: .none),
+    TestModel(id: "qwen3-vl-4b",        displayName: "Qwen3-VL 4B",           supportsTools: false, supportsImages: true, reasoningOptions: .none),
+    TestModel(id: "gemma-3-4b-vision",  displayName: "Gemma 3 4B (vision)",   supportsTools: false, supportsImages: true, reasoningOptions: .none),
+    TestModel(id: "gemma-4-e2b-vision", displayName: "Gemma 4 E2B (vision)",  supportsTools: false, supportsImages: true, reasoningOptions: .none),
 ]
 
 /// Models the Mac should have ready before this device is useful — just the default.
 ///
-/// Deliberately not every entry in `availableModels`: declaring them all would have the Mac
-/// offer to pull tens of gigabytes on first connect. The others download on demand the first
-/// time one is actually selected, through the same `modelDownloading` flow.
+/// Deliberately not every entry in `availableModels`: that list now mirrors the Mac's whole
+/// catalog, so declaring it would have the Mac offer to pull well over 100 GB on first
+/// connect. The others download on demand the first time one is actually selected, through
+/// the same `modelDownloading` flow.
 ///
 /// Transcription and speech synthesis are Parakeet and Kokoro on the Mac; they aren't listed
 /// here because they aren't selectable by name — the Mac manages them in its own Settings
@@ -160,9 +202,19 @@ private struct SettingsPanel: View {
                 Text("Model")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
+                // Split the way BigBro's own catalog splits them: a language model and a
+                // vision model are not interchangeable, and one flat list of seventeen
+                // gives no clue which of them can be sent a photo.
                 Picker("Model", selection: $viewModel.selectedModelID) {
-                    ForEach(availableModels) { model in
-                        Text(model.displayName).tag(model.id)
+                    Section("Text") {
+                        ForEach(availableModels.filter { !$0.supportsImages }) { model in
+                            Text(model.displayName).tag(model.id)
+                        }
+                    }
+                    Section("Vision") {
+                        ForEach(availableModels.filter(\.supportsImages)) { model in
+                            Text(model.displayName).tag(model.id)
+                        }
                     }
                 }
                 .pickerStyle(.menu)
@@ -264,13 +316,17 @@ private struct ReasoningSection: View {
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
 
-            Picker("Reasoning", selection: $viewModel.reasoningEffort) {
-                ForEach(options, id: \.self) { option in
-                    Text(label(for: option)).tag(option)
+            // A model with nothing to adjust gets the explanation and no control. Rendering
+            // a one-option picker would read as a choice that had been made for you.
+            if !options.isEmpty {
+                Picker("Reasoning", selection: $viewModel.reasoningEffort) {
+                    ForEach(options, id: \.self) { option in
+                        Text(label(for: option)).tag(option)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             Text(detail)
                 .font(.caption2)
@@ -282,9 +338,9 @@ private struct ReasoningSection: View {
     /// normalizes to one of these whenever the selected model changes.
     private var options: [ReasoningEffort?] {
         switch viewModel.selectedModel.reasoningOptions {
-        case .none:         return []
-        case .toggleOnly:   return [nil, .medium]
-        case .effortLevels: return [.low, .medium, .high]
+        case .none, .alwaysOn: return []
+        case .toggleOnly:      return [nil, .medium]
+        case .effortLevels:    return [.low, .medium, .high]
         }
     }
 
@@ -301,6 +357,8 @@ private struct ReasoningSection: View {
         switch viewModel.selectedModel.reasoningOptions {
         case .none:
             return ""
+        case .alwaysOn:
+            return "\(viewModel.selectedModel.displayName) always reasons, and its template takes neither an off switch nor a depth — the trace streams either way."
         case .toggleOnly:
             return viewModel.reasoningEffort == nil
                 ? "\(viewModel.selectedModel.displayName) won't reason for this turn."
@@ -667,16 +725,21 @@ private struct ChatPanel: View {
             Divider()
 
             HStack(spacing: 10) {
+                // Offered only for a model that can actually see. The Mac errors on a
+                // request carrying images for a language model rather than answering from
+                // the text alone, so an enabled picker here would just be a send that
+                // fails — and the failure names the model, not the button that caused it.
+                let canAttach = viewModel.selectedModel.supportsImages
                 PhotosPicker(
                     selection: $viewModel.imagePickerItems,
                     matching: .images,
                     photoLibrary: .shared()
                 ) {
-                    Image(systemName: "photo")
+                    Image(systemName: canAttach ? "photo" : "photo.badge.exclamationmark")
                         .font(.system(size: 22))
-                        .foregroundStyle(canType ? .blue : .secondary)
+                        .foregroundStyle(canType && canAttach ? .blue : .secondary)
                 }
-                .disabled(!canType || voiceBusy)
+                .disabled(!canType || voiceBusy || !canAttach)
                 .onChange(of: viewModel.imagePickerItems) { _, newItems in
                     viewModel.loadImages(from: newItems)
                 }
@@ -1189,6 +1252,15 @@ final class ChatViewModel: ObservableObject {
             // persist as a stored value the new model's `ReasoningSection` never presents.
             normalizeReasoningEffort(for: selectedModel)
 
+            // Images attached under a vision model outlive the switch away from it, and the
+            // next send would be refused by the Mac for carrying them. Dropping them here
+            // is visible — the previews disappear as the picker greys out — where a send
+            // that fails afterwards is not.
+            if !selectedModel.supportsImages {
+                selectedImages = []
+                imagePickerItems = []
+            }
+
             guard client.isConnected else { return }
             // Start the newly picked model so the next message doesn't pay for it. The old one
             // is left running: models are shared across paired devices, so stopping one here
@@ -1206,6 +1278,11 @@ final class ChatViewModel: ObservableObject {
         switch model.reasoningOptions {
         case .none:
             break
+        case .alwaysOn:
+            // Nil, not a level: the Mac honours `reasoning_effort` only for harmony models
+            // and reports everything else as dropped, so sending one here would earn a
+            // "capability dropped" note every turn for a control that was never offered.
+            reasoningEffort = nil
         case .toggleOnly:
             if reasoningEffort != nil { reasoningEffort = .medium }
         case .effortLevels:
@@ -1219,9 +1296,9 @@ final class ChatViewModel: ObservableObject {
     /// the picked option says so.
     var wantsReasoningTrace: Bool {
         switch selectedModel.reasoningOptions {
-        case .none:         return false
-        case .toggleOnly:   return reasoningEffort != nil
-        case .effortLevels: return true
+        case .none:                     return false
+        case .toggleOnly:               return reasoningEffort != nil
+        case .effortLevels, .alwaysOn:  return true
         }
     }
 
@@ -1232,10 +1309,12 @@ final class ChatViewModel: ObservableObject {
         let model = selectedModel
         var parts: [String] = []
         parts.append(model.supportsTools ? "Tools" : "No tools")
+        parts.append(model.supportsImages ? "Images" : "Text only")
         switch model.reasoningOptions {
         case .none:         parts.append("no reasoning")
         case .toggleOnly:   parts.append("reasoning on/off")
         case .effortLevels: parts.append("reasoning with low/med/high")
+        case .alwaysOn:     parts.append("always reasons")
         }
         return parts.joined(separator: " · ")
     }

@@ -42,13 +42,22 @@ private let availableModels: [TestModel] = [
     TestModel(id: "gpt-oss-20b", displayName: "gpt-oss 20B", supportsTools: true,
               reasoningOptions: .effortLevels),
     // ...
+    TestModel(id: "qwen2.5-vl-3b", displayName: "Qwen2.5-VL 3B", supportsTools: false,
+              supportsImages: true, reasoningOptions: .none),
 ]
 
 private let requiredModels: [String] = ["gpt-oss-20b"]
 ```
 
-`requiredModels` is deliberately shorter than `availableModels` — declaring them all would have
-the Mac warn about every model you had not downloaded. Speech models are absent from both
+`availableModels` mirrors BigBro's `ALL_MODELS` in full — every text and vision model the Mac
+will answer a `request` with, in the same order — because a model that can't be picked here is
+a model whose output framing, tool support and reasoning style go untested. The picker splits
+them into Text and Vision sections, and the photo button is enabled only for the latter: the
+Mac errors on images sent to a language model rather than answering from the text alone.
+
+`requiredModels` is deliberately far shorter — declaring them all would have the Mac offer to
+pull well over 100 GB on first connect. Everything else downloads on demand the first time it
+is selected, through the same `modelDownloading` flow. Speech models are absent from both
 because they are not selectable by name; the app asks for "speech" as a whole and the Mac
 manages them.
 
@@ -110,8 +119,12 @@ dropped — those notes appear under the transcript.
 
 ### Model selection and reasoning
 
-A picker chooses the model for the session. Reasoning controls adapt to what the model supports:
-effort levels for gpt-oss, an on/off toggle for Qwen3, and nothing at all for models without it.
+A picker chooses the model for the session, split into Text and Vision sections. Reasoning
+controls adapt to what the model supports: effort levels for gpt-oss, an on/off toggle for the
+Qwen3-family models and Bonsai, a note and no control for the DeepSeek-R1 distills — which
+always reason and take neither lever — and nothing at all for models without a reasoning phase.
+Switching model re-normalizes the reasoning choice, so a depth picked for gpt-oss can't survive
+as a stored value the next model's controls never present.
 
 ### Streaming vs single response
 
@@ -125,7 +138,9 @@ answer before speaking would make a conversation unusable.
 ### Image attachment
 
 The photo button opens the system picker. Images are JPEG-compressed and base64-encoded on the
-wire. Requires a vision model on the Mac.
+wire. Enabled only while a vision model is selected — the Mac errors on a request carrying
+images for a language model rather than answering from the text alone — and switching away from
+a vision model drops anything already attached rather than letting the next send be refused.
 
 ### Tools
 
