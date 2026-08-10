@@ -151,6 +151,29 @@ gh run view <id> --json jobs -q '.jobs[].steps[] | "\(.conclusion)\t\(.name)"'
 gh run view <id> --log-failed
 ```
 
+## Export compliance
+
+`bigbro-test/Info.plist` declares `ITSAppUsesNonExemptEncryption = false`, which is what stops
+App Store Connect asking the export-compliance question on every upload. Without it a build
+sits in "Missing Compliance" until someone answers the form by hand, which defeats the point of
+an automated deploy.
+
+**`false` is the accurate answer here, not a shortcut to skip a dialog.** At the time it was
+added, neither the app nor BigBroKit referenced CryptoKit, CommonCrypto, Security, or any
+`https://` endpoint, and the transport is `NWConnection(to: endpoint, using: .tcp)` — plain TCP,
+explicitly not `.tls`.
+
+Re-check it if any of that changes — the protocol gaining TLS, or the app starting to talk to a
+web service. Note the exemption is about *non-exempt* encryption: an app using only HTTPS through
+the OS's own APIs still answers `false`, because that use is exempt. Verify with:
+
+```sh
+grep -rE "CryptoKit|CommonCrypto|SecKey|NWProtocolTLS|https://" bigbro-test/*.swift
+```
+
+The declaration lives in `Info.plist` rather than as an `INFOPLIST_KEY_*` build setting so it
+sits beside `NSBonjourServices` and is greppable as one plain statement about the shipped app.
+
 ## App icon
 
 `bigbro-test/Assets.xcassets/AppIcon.appiconset` holds a single 1024×1024 master,
