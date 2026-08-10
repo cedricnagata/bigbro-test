@@ -1,0 +1,244 @@
+name: Deploy iOS to TestFlight
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  # Manual escape hatch: deploy the current main without merging a labelled PR.
+  workflow_dispatch:
+
+# Never let two uploads race for the same build number.
+concurrency:
+  group: testflight-ios
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.labels.*.name, 'deploy-ios'))
+    # Apple rejects uploads built with an SDK older than iOS 26, which ships in
+    # Xcode 26. macos-15 images top out at Xcode 16 / iOS 18.5.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      PROJECT: bigbro-test.xcodeproj
+      SCHEME: bigbro-test
+      BUILD_DIR: ${{ github.workspace }}/build
+      ARCHIVE_PATH: ${{ github.workspace }}/build/bigbro-test.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/build/export
+      # Not a secret — it ships inside every copy of the app.
+      APP_BUNDLE_ID: NagataInc.bigbro-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Don't trust the image default — pin the newest Xcode 26 and fail loudly if the
+      # image ever ships without one, rather than discovering it at the upload step.
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -z "$APP" ]; then
+            echo "::error::No Xcode 26 on this runner. Apple requires the iOS 26 SDK."
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$APP"
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | grep -i "iphoneos" || true
+
+      # This app resolves BigBroKit from the remote main branch and does not track a
+      # Package.resolved, so the kit revision is whatever main points at right now.
+      # Recorded in the log because it is the one input to this build that the commit
+      # being deployed does not pin — two runs of the same commit can ship different
+      # kit code, and when a TestFlight build misbehaves this line is the only way to
+      # find out which kit went into it.
+      - name: Resolve and record the BigBroKit revision
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME"
+          RESOLVED="$(find . -name Package.resolved -path '*xcshareddata*' | head -1)"
+          if [ -n "$RESOLVED" ]; then
+            echo "Resolved packages:"; cat "$RESOLVED"
+          fi
+
+      # The key is written once here and reused by altool below.
+      - name: Prepare App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          echo "$ASC_KEY_P8_BASE64" | base64 -d > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Import signing certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          # Ephemeral runner, ephemeral keychain — the password only guards this job.
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          echo "$CERT_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          # Lets codesign use the key without an interactive "allow" prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_APP_BASE64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Xcode 16+ reads UserData/...; older xcodebuild reads the legacy MobileDevice
+          # path. Write both so this survives a runner image bump.
+          DIRS=(
+            "$HOME/Library/MobileDevice/Provisioning Profiles"
+            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          )
+          for d in "${DIRS[@]}"; do mkdir -p "$d"; done
+
+          echo "$PROFILE_APP_BASE64" | base64 -d > "$RUNNER_TEMP/app.mobileprovision"
+          for d in "${DIRS[@]}"; do
+            cp "$RUNNER_TEMP/app.mobileprovision" "$d/app.mobileprovision"
+          done
+          rm -f "$RUNNER_TEMP/app.mobileprovision"
+
+      # Archive signs manually, with the distribution certificate imported above and
+      # the App Store profile installed above. Both are already on the runner, so
+      # nothing is requested from Apple and no certificate is minted.
+      #
+      # Do NOT add -allowProvisioningUpdates or -authenticationKey* here. On little-chef
+      # that made every archive ask Apple for an Apple Development certificate — an
+      # account-global, capped mutation. The account hit the cap and every archive then
+      # failed with "Choose a certificate to revoke", then "No profiles were found".
+      # The cap is per-account, so doing it here would break little-chef too.
+      #
+      # Archive must NOT skip signing. Entitlements live inside a code signature, so an
+      # unsigned archive carries none, and -exportArchive re-signs from the bundle's
+      # existing entitlements rather than reading them out of the profile.
+      #
+      # The signing settings live in the app target's Release config in project.pbxproj,
+      # not on this command line: xcodebuild build settings apply to every target at
+      # once, and setting PROVISIONING_PROFILE_SPECIFIER globally also hits the
+      # BigBroKit SPM target, which rejects it ("... does not support provisioning
+      # profiles"). The consequence is that a local Release archive needs the
+      # NagataInc.bigbro-test profile installed too — debug builds are unaffected.
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Build numbers must strictly increase within a MARKETING_VERSION train.
+          # Bump this if you ever upload by hand; reset to 0 when MARKETING_VERSION moves.
+          BUILD_NUMBER_OFFSET: ${{ vars.BUILD_NUMBER_OFFSET || 0 }}
+        run: |
+          set -euo pipefail
+          BUILD=$(( GITHUB_RUN_NUMBER + BUILD_NUMBER_OFFSET ))
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "Archiving build $BUILD"
+
+          # CURRENT_PROJECT_VERSION on the command line outranks the project setting.
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD"
+
+      - name: Export IPA
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_APP_NAME: ${{ secrets.IOS_PROFILE_APP_NAME }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$BUILD_DIR"
+          # Manual signing: the bundle ID is mapped to an explicit profile, so export
+          # never calls the App Store Connect API and never needs cloud-signing rights.
+          # signingStyle: automatic would attempt cloud signing, which needs to mint an
+          # Apple-managed distribution certificate and so requires an Admin key — an
+          # App Manager key gets "Cloud signing permission error", then "No profiles
+          # were found" as the downstream symptom.
+          #
+          # manageAppVersionAndBuildNumber=false stops export rewriting our build number.
+          cat > "$BUILD_DIR/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$APP_BUNDLE_ID</key><string>$PROFILE_APP_NAME</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$BUILD_DIR/ExportOptions.plist"
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          # altool discovers the key by name in ~/private_keys.
+          mkdir -p ~/private_keys
+          cp "$ASC_KEY_PATH" ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+          IPA="$(find "$EXPORT_PATH" -maxdepth 1 -name '*.ipa' | head -n 1)"
+          echo "Uploading $IPA (build $BUILD)"
+
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
+
+      # A build Apple *rejected* is still inspectable this way. (Nothing is captured
+      # if the archive itself failed.)
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/build/export/*.ipa
+            ${{ github.workspace }}/build/bigbro-test.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Clean up secrets
+        if: always()
+        run: |
+          rm -f ~/private_keys/AuthKey_*.p8 "${ASC_KEY_PATH:-}"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
